@@ -1,7 +1,7 @@
 # Setup Guide
 
 This guide walks you through everything you need to set up on your computer to work on the Koemerle app.
-Follow the steps in order. Ask Joro if anything is unclear.
+Follow the steps in order. Ask Joël if anything is unclear.
 
 ---
 
@@ -22,9 +22,9 @@ Follow the steps in order. Ask Joro if anything is unclear.
 2. Click **Sign up**
 3. Choose a username, enter your email and a password
 4. Complete the verification and confirm your email
-5. Send Joro your GitHub username so he can add you to the repository
+5. Send Joël your GitHub username so he can add you to the repository
 
-Once Joro has added you, you will receive an email invitation — **accept it**.
+Once Joël has added you, you will receive an email invitation — **accept it**.
 
 ---
 
@@ -118,9 +118,9 @@ Claude Code is an AI assistant that runs in the terminal and helps you write and
 ### Create an Anthropic account
 
 1. Go to [claude.ai](https://claude.ai) and sign up (or log in if you already have an account)
-2. You need a **Claude Max** subscription ($100/month) to use Claude Code — check with Joro about billing
+2. You need a **Claude Max** subscription ($100/month) to use Claude Code — check with Joël about billing
 
-*Alternative: Joro can share an API key with you if he sets one up — in that case skip the account step and he will give you a key to use in the next step.*
+*Alternative: Joël can share an API key with you if he sets one up — in that case skip the account step and he will give you a key to use in the next step.*
 
 ### Install Claude Code
 
@@ -155,9 +155,9 @@ The first time you run it, it will ask you to log in to your Anthropic account o
    ```
    cd ~
    ```
-3. Clone the repository (replace the URL with the actual one Joro sends you):
+3. Clone the repository (replace the URL with the actual one Joël sends you):
    ```
-   git clone https://github.com/JOROS_USERNAME/koemerle.git
+   git clone https://github.com/heya87/koemerle.git
    ```
 4. Go into the project folder:
    ```
@@ -222,7 +222,7 @@ GitHub no longer accepts passwords. You need a Personal Access Token:
 Node.js may not be in your PATH. Try closing and reopening the terminal, then run `npm install -g @anthropic-ai/claude-code` again.
 
 **`git pull` says "merge conflict"**
-Don't panic. Tell Joro — he will help you resolve it.
+Don't panic. Tell Joël — he will help you resolve it.
 
 ---
 
