@@ -1,0 +1,10 @@
+# Secrets and credentials
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+
+# Git internals
+.git/

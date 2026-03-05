@@ -1,6 +1,12 @@
 # macOS
 .DS_Store
 
+# Windows
+Thumbs.db
+
+# Claude Code local state (CLAUDE.md is intentionally committed, this folder is not)
+.claude/
+
 # Environment variables
 .env
 .env.local
