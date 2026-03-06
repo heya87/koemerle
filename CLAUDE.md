@@ -4,7 +4,11 @@
 
 A weekly meal planning app for two people. Users plan meals based on a weekly vegetable basket delivery and generate a shopping list that is pushed to the Bring! app.
 
-Full requirements: `docs/requirements.md`
+Full requirements: @docs/requirements.md 
+Read that file for general architectural tasks or to double-check the exact database structure, tech stack, functional requirements or application architecture.
+
+Keep your replies extremely concise and focus on conveying the key information. No unnecessary fluff, no long code snippets.|
+
 
 ## Team
 
