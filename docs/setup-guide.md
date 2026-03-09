@@ -10,9 +10,9 @@ Follow the steps in order. Ask Joël if anything is unclear.
 1. A GitHub account (to access the shared code repository)
 2. Git (to sync code between your computer and GitHub)
 3. A code editor (VS Code)
-4. Node.js (required for Claude Code and the app)
-5. Claude Code (the AI assistant that helps you write code)
-6. Python *(only if we go with Variant B — skip for now)*
+4. Node.js via nvm (required for Claude Code and the app)
+5. Docker Desktop (required to run the local database)
+6. Claude Code (the AI assistant that helps you write code)
 
 ---
 
@@ -81,16 +81,23 @@ Use the same email address you used for GitHub.
 
 ---
 
-## Step 5: Install Node.js
+## Step 5: Install Node.js via nvm
 
-Node.js is required for Claude Code and for running the app locally.
+We use nvm (Node Version Manager) to install and manage Node.js. This is more flexible than installing Node.js directly.
 
 ### Mac
 
-1. Go to [nodejs.org](https://nodejs.org)
-2. Download the **LTS** version (the one labelled "Recommended For Most Users")
-3. Run the installer and follow the steps
-4. Open Terminal and verify:
+1. Open Terminal and run:
+   ```
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+   ```
+2. Close and reopen Terminal (this is required for nvm to be available)
+3. Install Node.js 24:
+   ```
+   nvm install 24
+   nvm alias default 24
+   ```
+4. Verify:
    ```
    node --version
    npm --version
@@ -99,19 +106,39 @@ Node.js is required for Claude Code and for running the app locally.
 
 ### Windows
 
-1. Go to [nodejs.org](https://nodejs.org)
-2. Download the **LTS** version
-3. Run the installer — click **Next** through all steps, defaults are fine
-4. Open a new **Command Prompt** or **Git Bash** and verify:
+On Windows, use [nvm-windows](https://github.com/coreybutler/nvm-windows):
+
+1. Go to [github.com/coreybutler/nvm-windows/releases](https://github.com/coreybutler/nvm-windows/releases)
+2. Download and run `nvm-setup.exe`
+3. Open a new **Command Prompt** and run:
+   ```
+   nvm install 24
+   nvm use 24
+   ```
+4. Verify:
    ```
    node --version
    npm --version
    ```
-   Both should print a version number.
 
 ---
 
-## Step 6: Install Claude Code
+## Step 6: Install Docker Desktop
+
+Docker runs the local database on your computer.
+
+1. Go to [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/)
+2. Download the version for your system (Mac or Windows)
+3. Run the installer and follow the steps
+4. Open Docker Desktop once — it needs to be running in the background whenever you work on the app
+5. Verify in Terminal:
+   ```
+   docker --version
+   ```
+
+---
+
+## Step 7: Install Claude Code
 
 Claude Code is an AI assistant that runs in the terminal and helps you write and edit code.
 
@@ -148,14 +175,14 @@ The first time you run it, it will ask you to log in to your Anthropic account o
 
 ---
 
-## Step 7: Download the project (clone the repository)
+## Step 8: Download the project (clone the repository)
 
 1. Open Terminal (Mac) or Git Bash (Windows)
 2. Navigate to where you want to store the project, for example your home folder:
    ```
    cd ~
    ```
-3. Clone the repository (replace the URL with the actual one Joël sends you):
+3. Clone the repository:
    ```
    git clone https://github.com/heya87/koemerle.git
    ```
@@ -170,7 +197,42 @@ The first time you run it, it will ask you to log in to your Anthropic account o
 
 ---
 
-## Step 8: Open Claude Code in the project
+## Step 9: Set up the app
+
+1. Go into the app folder:
+   ```
+   cd app
+   ```
+2. Install dependencies:
+   ```
+   npm install
+   ```
+3. Create your local environment file by copying the example:
+   ```
+   cp .env.example .env
+   ```
+   Then open `.env` and fill in the values — ask Joël for the passwords.
+
+4. Start the local database:
+   ```
+   npm run db:start
+   ```
+   Keep this running in the background (or use Docker Desktop to manage it).
+
+5. Push the database schema:
+   ```
+   npm run db:push
+   ```
+
+6. Start the app:
+   ```
+   npm run dev
+   ```
+   Open [http://localhost:5173](http://localhost:5173) in your browser — you should see the app.
+
+---
+
+## Step 10: Open Claude Code in the project
 
 1. In VS Code, open the Terminal panel (menu: **Terminal → New Terminal**)
 2. Make sure you are in the project folder (you should see `koemerle` in the prompt)
@@ -186,17 +248,28 @@ The first time you run it, it will ask you to log in to your Anthropic account o
 
 Every time you sit down to work, follow this routine:
 
-### 1. Get the latest changes from GitHub (always do this first)
+### 1. Make sure Docker Desktop is running
+
+The app needs the local database. Open Docker Desktop if it is not already running.
+
+### 2. Get the latest changes from GitHub (always do this first)
 
 ```
 git pull
 ```
 
-### 2. Work on the app
+### 3. Start the app
+
+```
+cd app
+npm run dev
+```
+
+### 4. Work on the app
 
 Use Claude Code in the terminal or VS Code to make changes.
 
-### 3. Save your changes to GitHub
+### 5. Save your changes to GitHub
 
 When you are done and things are working, run:
 
@@ -224,30 +297,5 @@ Node.js may not be in your PATH. Try closing and reopening the terminal, then ru
 **`git pull` says "merge conflict"**
 Don't panic. Tell Joël — he will help you resolve it.
 
----
-
-## Additional setup (depending on tech stack)
-
-### If we go with Variant B (Python backend)
-
-Install Python:
-
-**Mac:**
-```
-brew install python
-```
-*(If `brew` is not found, install Homebrew first: [brew.sh](https://brew.sh))*
-
-**Windows:**
-1. Go to [python.org/downloads](https://python.org/downloads)
-2. Download the latest version, run the installer
-3. **Important:** tick the checkbox **"Add Python to PATH"** before clicking Install
-
-Verify:
-```
-python --version
-```
-
-### App dependencies
-
-Once the project structure is set up, there will be one more step to install the app's packages. That will be added here when the time comes.
+**Docker Desktop is not running**
+The app will fail to connect to the database. Open Docker Desktop and wait for it to fully start, then try again.
