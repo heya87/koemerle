@@ -163,13 +163,11 @@ The goal is to make weekly meal planning and shopping list creation require almo
 
 ---
 
-## 4. Tech Stack Options
+## 4. Tech Stack
 
-Two variants are on the table. The PO is currently **undecided**.
+**Decision: Variant A (SvelteKit full-stack)** — chosen by the PO.
 
-The most important decision criterion is:
-
-* **Ease of maintenance and deployment for a non-developer** is more important than Python familiarity
+The deciding criterion was ease of maintenance and deployment for a non-developer.
 
 ### Variant A: SvelteKit Full-Stack
 
@@ -310,7 +308,7 @@ The shopping list should exclude pantry staples by default, including:
 
 | # | Question                                                                                                       | Owner    | Status  |
 | - | -------------------------------------------------------------------------------------------------------------- | -------- | ------- |
-| 1 | Which tech stack variant should be chosen? (A or B)                                                            | PO       | Open    |
+| 1 | Which tech stack variant should be chosen? (A or B)                                                            | PO       | Closed — Variant A |
 | 2 | Does the veggie basket service have a usable API?                                                              | Dev      | Open    |
 | 3 | How should screenshot upload work exactly? Manual confirmation after parsing, or fully automatic?              | PO / Dev | Open    |
 | 4 | Should pantry ingredients beyond the defined staples be tracked in the app, or ignored in MVP?                 | PO       | Open    |
