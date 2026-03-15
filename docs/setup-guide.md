@@ -299,3 +299,6 @@ Don't panic. Tell Joël — he will help you resolve it.
 
 **Docker Desktop is not running**
 The app will fail to connect to the database. Open Docker Desktop and wait for it to fully start, then try again.
+
+**`docker: unknown command: docker compose`**
+Your Docker installation is missing the Compose plugin. Re-install Docker Desktop from [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) — it includes Compose out of the box.
