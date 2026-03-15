@@ -114,21 +114,28 @@ The goal is to make weekly meal planning and shopping list creation require almo
 
 ### 2.6 Weekly Planning Flow
 
-* The weekly flow should work as follows:
+* The basket contents are published by the delivery service every **Monday around noon**
+* After the basket is published, users review and adjust the basket contents in the app
+* Once the basket is final, the user clicks **"Start planning"** — this triggers auto-fill
+* When clicking "Start planning", the user selects the **first day and slot** to fill (e.g. Monday dinner, or Tuesday lunch) — the plan does not always start on Monday
+* Slots before the selected start are left empty and not auto-filled
 
-  1. Import basket contents
-  2. Compare basket contents with stored recipes
-  3. Select suitable recipes that use at least one basket ingredient
-  4. Auto-fill the fixed weekly meal plan
-  5. Leave remaining slots empty if there are not enough suitable recipes
-  6. Allow the user to complete empty slots manually by either:
+* The weekly flow:
 
-     * typing a meal name directly into the empty slot (free-text, no ingredients — not saved as a recipe in MVP), or
+  1. Basket contents are published (Monday ~noon)
+  2. User enters or adjusts basket contents in the app
+  3. User clicks "Start planning" and selects the first day/slot
+  4. App compares basket contents with stored recipes
+  5. App auto-fills the plan from the selected start slot onwards, preferring recipes with more basket ingredient matches
+  6. Slots before the start and any unfilled slots remain empty
+  7. User completes empty slots manually by either:
+
+     * typing a meal name directly into the slot (free-text, no ingredients — not saved as a recipe in MVP), or
      * selecting a recipe from the stored recipe set
 
      **Future:** The free-text path should be easy to extend so the app can prompt the user to save the meal as a recipe (with optional ingredients and link). This is out of scope for MVP but the code should make this upgrade straightforward.
-  7. Generate a shopping list for the remaining required ingredients
-  8. Append missing items to the shared Bring! list
+  8. Generate a shopping list for the remaining required ingredients
+  9. Append missing items to the shared Bring! list
 
 ---
 
@@ -341,8 +348,8 @@ The following is the suggested minimal first version based on the clarified requ
 4. Compare basket ingredients against stored meals/recipes using normalized ingredient match keys
 5. Select meals that use at least one basket ingredient
 6. Prefer meals with more basket ingredient matches when auto-filling
-7. Auto-fill meals for the **current week only**
-8. Leave meal slots empty if there are not enough suitable recipes
+7. Auto-fill meals for the **current week only**, starting from a user-selected day and slot
+8. Leave slots before the selected start, and any unfilled slots, empty
 9. Allow empty meal slots to be completed manually by:
 
    * typing a meal name directly into the slot (free-text, stored on the plan entry only — not saved as a new recipe), or

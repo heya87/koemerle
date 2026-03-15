@@ -43,6 +43,13 @@ export const mealPlanEntries = pgTable(
 	(t) => [unique().on(t.weekStart, t.day, t.slot)]
 );
 
+// One row per week — tracks planning state for that week
+export const weekMeta = pgTable('week_meta', {
+	weekStart: date('week_start').primaryKey(),
+	planningStartDay: text('planning_start_day'), // e.g. 'monday', null until planning is started
+	planningStartSlot: text('planning_start_slot') // e.g. 'lunch' or 'dinner', null until planning is started
+});
+
 export const activityLog = pgTable('activity_log', {
 	id: serial('id').primaryKey(),
 	weekStart: date('week_start').notNull(),
