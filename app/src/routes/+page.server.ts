@@ -1,8 +1,6 @@
-import { db } from '$lib/server/db';
-import { task } from '$lib/server/db/schema';
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
-	const tasks = await db.select().from(task);
-	return { tasks };
+	return redirect(302, '/plan');
 };
