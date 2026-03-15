@@ -100,15 +100,16 @@ The goal is to make weekly meal planning and shopping list creation require almo
 
   * a **display text** (for example: `2 large carrots`)
   * a **normalized match key** (for example: `carrot`)
+* Ingredients are entered and stored in **German**
 * Matching should normalize ingredient values where possible, including:
 
   * lowercase conversion
   * removal of punctuation
-  * singular/plural normalization where feasible
+  * singular/plural normalization where feasible (German rules)
   * simplification of quantity-based phrasing where feasible
 * A recipe is considered suitable if **at least one recipe ingredient match key** matches a basket ingredient match key
 * For auto-fill, recipes with **more basket ingredient matches** should be preferred over recipes with fewer matches
-* MVP matching may use a small synonym/alias list for common ingredient variants where useful
+* MVP matching may use a small synonym/alias list for common German ingredient variants where useful
 * MVP matching should stay simple and deterministic, not AI-based
 
 ### 2.6 Weekly Planning Flow
@@ -122,8 +123,10 @@ The goal is to make weekly meal planning and shopping list creation require almo
   5. Leave remaining slots empty if there are not enough suitable recipes
   6. Allow the user to complete empty slots manually by either:
 
-     * typing a meal directly into the empty slot, or
+     * typing a meal name directly into the empty slot (free-text, no ingredients — not saved as a recipe in MVP), or
      * selecting a recipe from the stored recipe set
+
+     **Future:** The free-text path should be easy to extend so the app can prompt the user to save the meal as a recipe (with optional ingredients and link). This is out of scope for MVP but the code should make this upgrade straightforward.
   7. Generate a shopping list for the remaining required ingredients
   8. Append missing items to the shared Bring! list
 
@@ -157,9 +160,10 @@ The goal is to make weekly meal planning and shopping list creation require almo
 * Both users work on the same shared plan
 * **Sync on refresh is enough** for MVP
 * No real-time collaboration required
-* Activity visibility is desired:
+* Activity visibility is desired, scoped to the **current week**:
 
   * Example: “Joro changed Tuesday dinner”
+  * No history beyond the current week required for MVP
 
 ---
 
@@ -178,7 +182,7 @@ Everything in one project. Frontend and backend API routes live together.
 | Framework  | SvelteKit (TypeScript)  | Full-stack, file-based routing, HTML-like component syntax |
 | Database   | PostgreSQL              | Hosted on Railway                                          |
 | ORM        | Drizzle                 | SQL-like, easy to read                                     |
-| Auth       | Lucia or Supabase Auth  | Simple email/password for 2 users                          |
+| Auth       | better-auth             | Simple email/password for 2 users                          |
 | Deployment | Railway                 | One platform for app + DB, auto-deploy from GitHub         |
 | Mobile     | Responsive web app      | Works in mobile browser                                    |
 | Bring!     | `bring-api` npm package | Push shopping list with one click                          |
@@ -250,7 +254,7 @@ Frontend and backend are separate projects/services.
 * Library: `bring-api` (npm, unofficial but maintained)
 * Capability: add items to a shared list programmatically
 * Trigger: user clicks "Send to Bring" after finalizing the meal plan
-* Auth: Bring account credentials stored server-side (env variable)
+* Auth: Both users already have a Bring! account. Credentials stored server-side as env variables.
 * Behavior:
 
   * **Append missing items only**
@@ -284,11 +288,11 @@ Frontend and backend are separate projects/services.
 
 ### 7.1 Pantry Staples
 
-The shopping list should exclude pantry staples by default, including:
+The shopping list should exclude a fixed list of pantry staples. For MVP, this list is hardcoded and not user-editable:
 
-* salt
-* pepper
-* oil
+* salt (Salz)
+* pepper (Pfeffer)
+* oil (Öl)
 * balsamico
 
 ### 7.2 Basket Quantities
@@ -311,12 +315,12 @@ The shopping list should exclude pantry staples by default, including:
 | 1 | Which tech stack variant should be chosen? (A or B)                                                            | PO       | Closed — Variant A |
 | 2 | Does the veggie basket service have a usable API?                                                              | Dev      | Open    |
 | 3 | How should screenshot upload work exactly? Manual confirmation after parsing, or fully automatic?              | PO / Dev | Open    |
-| 4 | Should pantry ingredients beyond the defined staples be tracked in the app, or ignored in MVP?                 | PO       | Open    |
-| 5 | What exactly should appear in the activity log/history?                                                        | PO       | Open    |
+| 4 | Should pantry ingredients beyond the defined staples be tracked in the app, or ignored in MVP?                 | PO       | Closed — fixed hardcoded list for MVP |
+| 5 | What exactly should appear in the activity log/history?                                                        | PO       | Closed — current week only, e.g. "Joro changed Tuesday dinner" |
 | 6 | Does biogmuesabo.ch expose basket contents via API? Re-check network calls during active delivery week.        | Dev      | Pending |
 | 7 | Should recipe import from URL be included in MVP or postponed?                                                 | PO       | Open    |
 | 8 | Should matching support a small synonym/alias list for common ingredient variants in MVP?                      | PO       | Open    |
-| 9 | Should matching be multilingual (for example German/English ingredient variants), or just one language in MVP? | PO       | Open    |
+| 9 | Should matching be multilingual (for example German/English ingredient variants), or just one language in MVP? | PO       | Closed — German only |
 
 ## 9. MVP Scope
 
@@ -327,6 +331,7 @@ The following is the suggested minimal first version based on the clarified requ
    * name
    * free-text ingredients
    * optional recipe link
+   * Expected scale: dozens of recipes
 2. Import basket contents manually, with quantities
 3. Support later fallback options for:
 
@@ -340,8 +345,9 @@ The following is the suggested minimal first version based on the clarified requ
 8. Leave meal slots empty if there are not enough suitable recipes
 9. Allow empty meal slots to be completed manually by:
 
-   * typing a meal directly into the slot, or
+   * typing a meal name directly into the slot (free-text, stored on the plan entry only — not saved as a new recipe), or
    * selecting a recipe from the stored recipe set
+   * Code should make it easy to later add a "save as recipe" flow for free-text entries
 10. Fixed weekly structure:
 
 * Monday to Sunday
