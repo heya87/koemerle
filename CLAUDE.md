@@ -19,22 +19,15 @@ Claude Code is the primary development tool. Keep code readable for someone with
 
 ## Tech Stack
 
-**Decision pending** — two variants under consideration. Update this section once decided.
+**Variant A: SvelteKit full-stack** (decided)
 
-### Variant A: SvelteKit full-stack
 - SvelteKit (TypeScript) — frontend + backend API routes
 - PostgreSQL on Railway
 - Drizzle ORM
-
-### Variant B: SvelteKit + Python backend
-- SvelteKit (TypeScript) — frontend only
-- FastAPI (Python) — REST API
-- PostgreSQL on Supabase
-- SQLAlchemy / SQLModel
-
-### Common to both
-- PWA for iPhone (Safari, add-to-homescreen)
-- Bring! API integration for shopping list
+- Auth: Lucia or Supabase Auth
+- Deployment: Railway (~$5/month)
+- Responsive web app (desktop + mobile browser)
+- Bring! API integration via `bring-api` npm package
 - Simple email/password auth for 2 users
 - No Google / Amazon / Microsoft services
 
@@ -53,5 +46,4 @@ Claude Code is the primary development tool. Keep code readable for someone with
 
 ## Open Decisions
 
-- Tech stack variant (A or B) — PO to decide
 - Vegetable basket integration (biogmuesabo.ch) — re-check API when next delivery is active
