@@ -16,6 +16,17 @@ const STOP_WORDS = new Set([
 ]);
 
 /**
+ * Returns the Monday of the week containing the given date, as YYYY-MM-DD.
+ */
+export function getWeekStart(date: Date = new Date()): string {
+	const d = new Date(date);
+	const day = d.getDay();
+	const diff = day === 0 ? -6 : 1 - day;
+	d.setDate(d.getDate() + diff);
+	return d.toISOString().split('T')[0];
+}
+
+/**
  * Generates normalized match keys from a free-text ingredients string.
  * Each line is one ingredient. Numbers, units and stop words are stripped.
  * Returns deduplicated lowercase keys.
@@ -40,4 +51,57 @@ export function generateMatchKeys(ingredients: string): string[] {
 	}
 
 	return [...keys];
+}
+
+/**
+ * Generates a single match key for one basket item line.
+ * Takes the last meaningful word (typically the main ingredient noun in German).
+ */
+export function generateBasketMatchKey(line: string): string {
+	const keys = generateMatchKeys(line);
+	return keys.at(-1) ?? line.toLowerCase().trim();
+}
+
+// Units that are written attached to the number (e.g. "500g"), no space before ingredient name.
+const METRIC_UNITS = new Set(['g', 'kg', 'mg', 'ml', 'cl', 'dl', 'l']);
+
+type ParsedItem = { amount: number; unit: string; name: string };
+
+function parseItem(text: string): ParsedItem | null {
+	const t = text.trim();
+
+	// "500g Karotten" or "2dl Rahm"
+	let m = t.match(/^(\d+(?:[.,]\d+)?)(g|kg|mg|ml|cl|dl|l)\s+(.+)$/i);
+	if (m) return { amount: parseFloat(m[1].replace(',', '.')), unit: m[2].toLowerCase(), name: m[3] };
+
+	// "2 EL Öl" or "1 Bund Petersilie"
+	m = t.match(/^(\d+(?:[.,]\d+)?)\s+(el|tl|bund|prise|stk|stück|zehe|zweig|scheibe|dose|glas|becher|packung)\s+(.+)$/i);
+	if (m) return { amount: parseFloat(m[1].replace(',', '.')), unit: m[2].toLowerCase(), name: m[3] };
+
+	// "3 Karotten" or "2 Eier"
+	m = t.match(/^(\d+(?:[.,]\d+)?)\s+(.+)$/);
+	if (m) return { amount: parseFloat(m[1].replace(',', '.')), unit: '', name: m[2] };
+
+	return null;
+}
+
+function formatItem({ amount, unit, name }: ParsedItem): string {
+	const num = Number.isInteger(amount) ? String(amount) : amount.toFixed(1);
+	if (!unit) return `${num} ${name}`;
+	if (METRIC_UNITS.has(unit)) return `${num}${unit} ${name}`;
+	return `${num} ${unit.toUpperCase()} ${name}`;
+}
+
+/**
+ * Tries to merge two basket item display texts by adding their amounts.
+ * Returns the merged string, or null if merging is not possible
+ * (e.g. different units or incompatible formats).
+ */
+export function mergeBasketItems(existing: string, added: string): string | null {
+	const a = parseItem(existing);
+	const b = parseItem(added);
+	if (!a || !b) return null;
+	if (a.unit !== b.unit) return null;
+	if (a.name.toLowerCase() !== b.name.toLowerCase()) return null;
+	return formatItem({ amount: a.amount + b.amount, unit: a.unit, name: a.name });
 }
