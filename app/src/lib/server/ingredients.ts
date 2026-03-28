@@ -16,6 +16,20 @@ const STOP_WORDS = new Set([
 ]);
 
 /**
+ * Strips accents from a match key for comparison purposes.
+ * Handles French accents while preserving German umlauts.
+ */
+export function stripAccents(key: string): string {
+	return key
+		.replace(/[éèêë]/g, 'e')
+		.replace(/[àâ]/g, 'a')
+		.replace(/[îï]/g, 'i')
+		.replace(/[ôœ]/g, 'o')
+		.replace(/[ûùú]/g, 'u')
+		.replace(/[ç]/g, 'c');
+}
+
+/**
  * Returns the Monday of the week containing the given date, as YYYY-MM-DD.
  */
 export function getWeekStart(date: Date = new Date()): string {
@@ -40,6 +54,13 @@ export function generateMatchKeys(ingredients: string): string[] {
 
 		const normalized = trimmed
 			.toLowerCase()
+			// Normalize French/Italian accented vowels (keep German ä/ö/ü intact)
+			.replace(/[éèêë]/g, 'e')
+			.replace(/[àâ]/g, 'a')
+			.replace(/[îï]/g, 'i')
+			.replace(/[ôœ]/g, 'o')
+			.replace(/[ûùú]/g, 'u')
+			.replace(/[ç]/g, 'c')
 			.replace(/[\d.,½¼¾⅓⅔]+/g, ' ')
 			.replace(/[^\p{L}\s]/gu, ' ');
 
