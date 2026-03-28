@@ -3,12 +3,13 @@ import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { recipes, basketItems, mealPlanEntries, weekMeta, activityLog } from '$lib/server/db/schema';
 import { eq, and } from 'drizzle-orm';
-import { getWeekStart } from '$lib/server/ingredients';
+import { getWeekStart, stripAccents } from '$lib/server/ingredients';
 
 type Day = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
 type Slot = 'lunch' | 'dinner';
 
-// All valid slots in planning order. Thursday has no lunch.
+const NOT_NEEDED = '__not_needed__';
+
 const ALL_SLOTS: [Day, Slot][] = [
 	['monday', 'lunch'],
 	['monday', 'dinner'],
@@ -16,6 +17,7 @@ const ALL_SLOTS: [Day, Slot][] = [
 	['tuesday', 'dinner'],
 	['wednesday', 'lunch'],
 	['wednesday', 'dinner'],
+	['thursday', 'lunch'],
 	['thursday', 'dinner'],
 	['friday', 'lunch'],
 	['friday', 'dinner'],
@@ -35,10 +37,17 @@ const DAY_LABELS: Record<Day, string> = {
 	sunday: 'Sonntag'
 };
 
-const SLOT_LABELS: Record<Slot, string> = {
-	lunch: 'Mittag',
-	dinner: 'Abend'
-};
+const SLOT_LABELS: Record<Slot, string> = { lunch: 'Mittag', dinner: 'Abend' };
+
+const VALID_DAYS: Day[] = [
+	'monday',
+	'tuesday',
+	'wednesday',
+	'thursday',
+	'friday',
+	'saturday',
+	'sunday'
+];
 
 export const load: PageServerLoad = async () => {
 	const weekStart = getWeekStart();
@@ -47,92 +56,113 @@ export const load: PageServerLoad = async () => {
 		db.select().from(recipes).orderBy(recipes.name),
 		db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
 		db.select().from(mealPlanEntries).where(eq(mealPlanEntries.weekStart, weekStart)),
-		db
-			.select()
-			.from(weekMeta)
-			.where(eq(weekMeta.weekStart, weekStart))
+		db.select().from(weekMeta).where(eq(weekMeta.weekStart, weekStart))
 	]);
 
-	const meta = metaRows[0] ?? null;
-
-	// Compute basket match key set for display purposes
-	const basketKeys = basket.map((b) => b.matchKey);
-
-	return { weekStart, allRecipes, basket, basketKeys, entries, meta };
+	return {
+		weekStart,
+		allRecipes,
+		basket,
+		entries,
+		meta: metaRows[0] ?? null
+	};
 };
 
 export const actions: Actions = {
-	startPlanning: async ({ request, locals }) => {
+	// Compute a suggestion and return it — no DB write.
+	getSuggestion: async ({ request, locals }) => {
 		const user = locals.user;
 		if (!user) return fail(401);
 
 		const fd = await request.formData();
 		const startDay = fd.get('startDay')?.toString() as Day;
 		const startSlot = fd.get('startSlot')?.toString() as Slot;
+		const notNeededKeys = new Set(fd.getAll('notNeeded').map((v) => v.toString()));
 
-		const validDays: Day[] = [
-			'monday',
-			'tuesday',
-			'wednesday',
-			'thursday',
-			'friday',
-			'saturday',
-			'sunday'
-		];
-		if (!validDays.includes(startDay) || !['lunch', 'dinner'].includes(startSlot)) {
+		if (!VALID_DAYS.includes(startDay) || !['lunch', 'dinner'].includes(startSlot)) {
 			return fail(400, { message: 'Ungültiger Start' });
 		}
-		if (startDay === 'thursday' && startSlot === 'lunch') {
-			return fail(400, { message: 'Donnerstag hat kein Mittagessen' });
-		}
+
 
 		const weekStart = getWeekStart();
-		const userName = user.name ?? user.email;
-
-		// Get basket keys and recipes
 		const [basket, allRecipes, existing] = await Promise.all([
 			db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
 			db.select().from(recipes),
 			db.select().from(mealPlanEntries).where(eq(mealPlanEntries.weekStart, weekStart))
 		]);
 
-		const basketKeys = new Set(basket.map((b) => b.matchKey));
+		const basketKeys = new Set(basket.map((b) => stripAccents(b.matchKey)));
 
-		// Score and sort recipes by basket match count
 		const scored = allRecipes
-			.map((r) => ({
-				...r,
-				score: r.matchKeys.filter((k) => basketKeys.has(k)).length
-			}))
+			.map((r) => ({ ...r, score: r.matchKeys.filter((k) => basketKeys.has(stripAccents(k))).length }))
 			.filter((r) => r.score > 0)
 			.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 
-		const usedRecipeIds = new Set(existing.map((e) => e.recipeId).filter((id) => id !== null));
-		const available = scored.filter((r) => !usedRecipeIds.has(r.id));
+		const usedIds = new Set(existing.map((e) => e.recipeId).filter((id) => id !== null));
+		const available = scored.filter((r) => !usedIds.has(r.id));
 
-		// Find starting slot index
 		const startIdx = ALL_SLOTS.findIndex(([d, s]) => d === startDay && s === startSlot);
-		const slotsToFill = ALL_SLOTS.slice(startIdx);
 
-		// Build new entries for unfilled slots
-		const toInsert: (typeof mealPlanEntries.$inferInsert)[] = [];
-		for (const [day, slot] of slotsToFill) {
+		type SuggestionEntry = {
+			day: Day;
+			slot: Slot;
+			recipeId: number | null;
+			recipeName: string | null;
+			recipeUrl: string | null;
+			notNeeded: boolean;
+		};
+
+		const suggestion: SuggestionEntry[] = [];
+
+		for (const [day, slot] of ALL_SLOTS.slice(startIdx)) {
 			if (existing.some((e) => e.day === day && e.slot === slot)) continue;
+
+			if (notNeededKeys.has(`${day}-${slot}`)) {
+				suggestion.push({ day, slot, recipeId: null, recipeName: null, recipeUrl: null, notNeeded: true });
+				continue;
+			}
+
 			const recipe = available.shift();
-			if (!recipe) break;
-			usedRecipeIds.add(recipe.id);
-			toInsert.push({
-				weekStart,
+			if (!recipe) continue; // leave empty rather than break, in case later slots have matches
+			usedIds.add(recipe.id);
+			suggestion.push({
 				day,
 				slot,
 				recipeId: recipe.id,
-				freeText: null,
-				updatedBy: userName,
-				updatedAt: new Date()
+				recipeName: recipe.name,
+				recipeUrl: recipe.recipeUrl ?? null,
+				notNeeded: false
 			});
 		}
 
-		// Save meta and entries
+		return { suggestion, startDay, startSlot };
+	},
+
+	// Save the confirmed plan to DB.
+	confirmPlan: async ({ request, locals }) => {
+		const user = locals.user;
+		if (!user) return fail(401);
+
+		const fd = await request.formData();
+		const startDay = fd.get('startDay')?.toString() as Day;
+		const startSlot = fd.get('startSlot')?.toString() as Slot;
+		const entriesJson = fd.get('entries')?.toString() ?? '[]';
+
+		let entries: {
+			day: Day;
+			slot: Slot;
+			recipeId: number | null;
+			notNeeded: boolean;
+		}[];
+		try {
+			entries = JSON.parse(entriesJson);
+		} catch {
+			return fail(400, { message: 'Ungültige Daten' });
+		}
+
+		const weekStart = getWeekStart();
+		const userName = user.name ?? user.email;
+
 		await db
 			.insert(weekMeta)
 			.values({ weekStart, planningStartDay: startDay, planningStartSlot: startSlot })
@@ -141,14 +171,26 @@ export const actions: Actions = {
 				set: { planningStartDay: startDay, planningStartSlot: startSlot }
 			});
 
-		if (toInsert.length > 0) {
-			await db.insert(mealPlanEntries).values(toInsert);
+		await db.delete(mealPlanEntries).where(eq(mealPlanEntries.weekStart, weekStart));
+
+		if (entries.length > 0) {
+			await db.insert(mealPlanEntries).values(
+				entries.map((e) => ({
+					weekStart,
+					day: e.day,
+					slot: e.slot,
+					recipeId: e.notNeeded ? null : (e.recipeId ?? null),
+					freeText: e.notNeeded ? NOT_NEEDED : null,
+					updatedBy: userName,
+					updatedAt: new Date()
+				}))
+			);
 		}
 
 		await db.insert(activityLog).values({
 			weekStart,
 			userId: user.id,
-			message: `${userName} hat die Planung gestartet (ab ${DAY_LABELS[startDay]} ${SLOT_LABELS[startSlot]})`,
+			message: `${userName} hat den Wochenplan bestätigt`,
 			createdAt: new Date()
 		});
 	},
@@ -222,6 +264,77 @@ export const actions: Actions = {
 			weekStart,
 			userId: user.id,
 			message: `${userName} hat ${DAY_LABELS[day]} ${SLOT_LABELS[slot]} geleert`,
+			createdAt: new Date()
+		});
+	},
+
+	moveSlot: async ({ request, locals }) => {
+		const user = locals.user;
+		if (!user) return fail(401);
+
+		const fd = await request.formData();
+		const fromDay = fd.get('fromDay')?.toString() as Day;
+		const fromSlot = fd.get('fromSlot')?.toString() as Slot;
+		const toDay = fd.get('toDay')?.toString() as Day;
+		const toSlot = fd.get('toSlot')?.toString() as Slot;
+
+		if (fromDay === toDay && fromSlot === toSlot) return;
+
+		const weekStart = getWeekStart();
+		const userName = user.name ?? user.email;
+
+		const [fromEntry, toEntry] = await Promise.all([
+			db
+				.select()
+				.from(mealPlanEntries)
+				.where(
+					and(
+						eq(mealPlanEntries.weekStart, weekStart),
+						eq(mealPlanEntries.day, fromDay),
+						eq(mealPlanEntries.slot, fromSlot)
+					)
+				)
+				.then((r) => r[0] ?? null),
+			db
+				.select()
+				.from(mealPlanEntries)
+				.where(
+					and(
+						eq(mealPlanEntries.weekStart, weekStart),
+						eq(mealPlanEntries.day, toDay),
+						eq(mealPlanEntries.slot, toSlot)
+					)
+				)
+				.then((r) => r[0] ?? null)
+		]);
+
+		if (!fromEntry) return fail(400, { message: 'Quell-Slot ist leer' });
+
+		if (toEntry) {
+			await Promise.all([
+				db
+					.update(mealPlanEntries)
+					.set({ recipeId: toEntry.recipeId, freeText: toEntry.freeText, updatedBy: userName, updatedAt: new Date() })
+					.where(eq(mealPlanEntries.id, fromEntry.id)),
+				db
+					.update(mealPlanEntries)
+					.set({ recipeId: fromEntry.recipeId, freeText: fromEntry.freeText, updatedBy: userName, updatedAt: new Date() })
+					.where(eq(mealPlanEntries.id, toEntry.id))
+			]);
+		} else {
+			await db.insert(mealPlanEntries).values({
+				weekStart, day: toDay, slot: toSlot,
+				recipeId: fromEntry.recipeId, freeText: fromEntry.freeText,
+				updatedBy: userName, updatedAt: new Date()
+			});
+			await db.delete(mealPlanEntries).where(eq(mealPlanEntries.id, fromEntry.id));
+		}
+
+		const action = toEntry ? 'getauscht' : 'verschoben';
+		await db.insert(activityLog).values({
+			weekStart,
+			userId: user.id,
+			message: `${userName} hat ${DAY_LABELS[fromDay]} ${SLOT_LABELS[fromSlot]} ${action} nach ${DAY_LABELS[toDay]} ${SLOT_LABELS[toSlot]}`,
 			createdAt: new Date()
 		});
 	}
