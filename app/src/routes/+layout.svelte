@@ -13,7 +13,7 @@
 
 {#if data.user}
 	<header class="top-bar">
-		<span class="brand">Körmerle</span>
+		<span class="brand">Kömerle</span>
 		<nav class="desktop-nav">
 			<a href="/plan">Wochenplan</a>
 			<a href="/recipes">Rezepte</a>
