@@ -17,7 +17,7 @@
 		<nav class="desktop-nav">
 			<a href="/plan">Wochenplan</a>
 			<a href="/recipes">Rezepte</a>
-			<a href="/basket">Korb</a>
+			<a href="/basket">Gemüsekorb</a>
 		</nav>
 		<div class="user-area">
 			<span class="username">{data.user.name}</span>
@@ -30,7 +30,7 @@
 	<nav class="tab-bar">
 		<a href="/plan">Wochenplan</a>
 		<a href="/recipes">Rezepte</a>
-		<a href="/basket">Korb</a>
+		<a href="/basket">Gemüsekorb</a>
 	</nav>
 {/if}
 
