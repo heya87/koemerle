@@ -6,13 +6,13 @@
 </script>
 
 <div class="page-header">
-	<h1>Korb</h1>
+	<h1>Gemüsekorb</h1>
 	<span class="week-label">Woche ab {data.weekStart}</span>
 </div>
 
 <div class="basket-card">
 	{#if data.items.length === 0}
-		<p class="empty">Noch keine Zutaten im Korb.</p>
+		<p class="empty">Noch keine Zutaten im Gemüsekorb.</p>
 	{:else}
 		<ul class="item-list">
 			{#each data.items as item}
