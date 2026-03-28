@@ -7,7 +7,7 @@
 
 <div class="login-wrapper">
 	<div class="login-card">
-		<h1 class="app-name">Körmerle</h1>
+		<h1 class="app-name">Kömerle</h1>
 		<p class="tagline">Wochenplanung leicht gemacht</p>
 
 		<form method="post" use:enhance>
