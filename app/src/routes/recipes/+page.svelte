@@ -19,6 +19,9 @@
 			<li class="recipe-card">
 				<div class="card-main">
 					<span class="card-name">{recipe.name}</span>
+					{#if recipe.servings}
+						<span class="card-servings">{recipe.servings} P.</span>
+					{/if}
 					{#if recipe.recipeUrl}
 						<a href={recipe.recipeUrl} target="_blank" rel="noopener" class="card-link">Rezept →</a>
 					{/if}
@@ -47,6 +50,7 @@
 		<thead>
 			<tr>
 				<th>Name</th>
+				<th>Personen</th>
 				<th>Zutaten (Schlüssel)</th>
 				<th>Link</th>
 				<th></th>
@@ -56,6 +60,7 @@
 			{#each data.recipes as recipe}
 				<tr>
 					<td class="col-name">{recipe.name}</td>
+					<td class="col-servings">{recipe.servings ?? '—'}</td>
 					<td class="col-keys">{recipe.matchKeys.join(', ')}</td>
 					<td class="col-link">
 						{#if recipe.recipeUrl}
@@ -131,6 +136,11 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 1rem;
+	}
+
+	.card-servings {
+		font-size: 0.775rem;
+		color: var(--text-muted);
 	}
 
 	.card-main {
@@ -234,6 +244,12 @@
 
 		tbody tr:hover td {
 			background: #faf9f7;
+		}
+
+		.col-servings {
+			font-size: 0.875rem;
+			color: var(--text-muted);
+			white-space: nowrap;
 		}
 
 		.col-keys {

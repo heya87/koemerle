@@ -18,6 +18,7 @@
 			<a href="/plan">Wochenplan</a>
 			<a href="/recipes">Rezepte</a>
 			<a href="/basket">Gemüsekorb</a>
+			<a href="/shopping">Einkaufen</a>
 		</nav>
 		<div class="user-area">
 			<span class="username">{data.user.name}</span>
@@ -31,6 +32,7 @@
 		<a href="/plan">Wochenplan</a>
 		<a href="/recipes">Rezepte</a>
 		<a href="/basket">Gemüsekorb</a>
+		<a href="/shopping">Einkaufen</a>
 	</nav>
 {/if}
 

@@ -26,6 +26,11 @@
 		</label>
 
 		<label>
+			<span class="label-text">Personen</span>
+			<input type="number" name="servings" min="1" max="20" value={form?.servings ?? ''} style="max-width: 6rem" />
+		</label>
+
+		<label>
 			<span class="label-text">Rezept-Link</span>
 			<input type="url" name="recipeUrl" value={form?.recipeUrl ?? ''} />
 		</label>

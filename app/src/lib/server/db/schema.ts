@@ -17,6 +17,7 @@ export const recipes = pgTable('recipes', {
 	ingredients: text('ingredients').notNull(),
 	matchKeys: text('match_keys').array().notNull().default([]),
 	recipeUrl: text('recipe_url'),
+	servings: integer('servings'),
 	createdAt: timestamp('created_at').notNull().defaultNow()
 });
 
