@@ -202,6 +202,11 @@ export const actions: Actions = {
 		const fd = await request.formData();
 		const day = fd.get('day')?.toString() as Day;
 		const slot = fd.get('slot')?.toString() as Slot;
+
+		if (!VALID_DAYS.includes(day) || !['lunch', 'dinner'].includes(slot)) {
+			return fail(400, { message: 'Ungültiger Tag oder Slot' });
+		}
+
 		const recipeIdStr = fd.get('recipeId')?.toString();
 		const freeText = fd.get('freeText')?.toString().trim() ?? '';
 
@@ -247,6 +252,11 @@ export const actions: Actions = {
 		const fd = await request.formData();
 		const day = fd.get('day')?.toString() as Day;
 		const slot = fd.get('slot')?.toString() as Slot;
+
+		if (!VALID_DAYS.includes(day) || !['lunch', 'dinner'].includes(slot)) {
+			return fail(400, { message: 'Ungültiger Tag oder Slot' });
+		}
+
 		const weekStart = getWeekStart();
 		const userName = user.name ?? user.email;
 
@@ -277,6 +287,13 @@ export const actions: Actions = {
 		const fromSlot = fd.get('fromSlot')?.toString() as Slot;
 		const toDay = fd.get('toDay')?.toString() as Day;
 		const toSlot = fd.get('toSlot')?.toString() as Slot;
+
+		if (
+			!VALID_DAYS.includes(fromDay) || !['lunch', 'dinner'].includes(fromSlot) ||
+			!VALID_DAYS.includes(toDay) || !['lunch', 'dinner'].includes(toSlot)
+		) {
+			return fail(400, { message: 'Ungültiger Tag oder Slot' });
+		}
 
 		if (fromDay === toDay && fromSlot === toSlot) return;
 

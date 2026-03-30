@@ -17,7 +17,8 @@ export const load: PageServerLoad = async () => {
 };
 
 export const actions: Actions = {
-	add: async ({ request }) => {
+	add: async ({ request, locals }) => {
+		if (!locals.user) return fail(401);
 		const formData = await request.formData();
 		const displayText = formData.get('displayText')?.toString().trim() ?? '';
 
@@ -46,7 +47,8 @@ export const actions: Actions = {
 		await db.insert(basketItems).values({ weekStart, displayText, matchKey });
 	},
 
-	remove: async ({ request }) => {
+	remove: async ({ request, locals }) => {
+		if (!locals.user) return fail(401);
 		const formData = await request.formData();
 		const id = Number(formData.get('id'));
 		const weekStart = getWeekStart();

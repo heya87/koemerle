@@ -5,7 +5,9 @@ import { recipes } from '$lib/server/db/schema';
 import { generateMatchKeys } from '$lib/server/ingredients';
 
 export const actions: Actions = {
-	default: async ({ request }) => {
+	default: async ({ request, locals }) => {
+		if (!locals.user) return fail(401);
+
 		const formData = await request.formData();
 		const name = formData.get('name')?.toString().trim() ?? '';
 		const ingredients = formData.get('ingredients')?.toString().trim() ?? '';
@@ -15,6 +17,7 @@ export const actions: Actions = {
 
 		if (!name) return fail(400, { message: 'Name ist erforderlich.', name, ingredients, recipeUrl, servings });
 		if (!ingredients) return fail(400, { message: 'Zutaten sind erforderlich.', name, ingredients, recipeUrl, servings });
+		if (recipeUrl && !/^https?:\/\//i.test(recipeUrl)) return fail(400, { message: 'URL muss mit http:// oder https:// beginnen.', name, ingredients, recipeUrl, servings });
 
 		const matchKeys = generateMatchKeys(ingredients);
 
