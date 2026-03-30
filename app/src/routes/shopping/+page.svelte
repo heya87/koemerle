@@ -4,6 +4,26 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
+	// Track which list each item is assigned to (default: first list)
+	let assignments = $state<Record<string, string>>({});
+
+	function getListId(itemText: string): string {
+		return assignments[itemText] ?? data.bringLists[0]?.id ?? '';
+	}
+
+	function getListName(itemText: string): string {
+		const id = getListId(itemText);
+		return data.bringLists.find((l) => l.id === id)?.name ?? '';
+	}
+
+	function toggleList(itemText: string) {
+		const current = getListId(itemText);
+		const other = data.bringLists.find((l) => l.id !== current);
+		if (other) assignments[itemText] = other.id;
+	}
+
+	let assignmentsJson = $derived(JSON.stringify(assignments));
+
 	function formatDate(iso: string): string {
 		const [y, m, d] = iso.split('-');
 		return `${d}.${m}.${y}`;
@@ -21,13 +41,21 @@
 	{:else}
 		<ul class="item-list">
 			{#each data.shoppingList as item}
-				<li>{item.displayText}</li>
+				<li>
+					<span>{item.displayText}</span>
+					{#if data.bringLists.length === 2}
+						<button type="button" class="list-toggle" onclick={() => toggleList(item.displayText)}>
+							{getListName(item.displayText)}
+						</button>
+					{/if}
+				</li>
 			{/each}
 		</ul>
 	{/if}
 
 	<div class="actions">
 		<form method="post" action="?/sendToBring" use:enhance>
+			<input type="hidden" name="assignments" value={assignmentsJson} />
 			<button type="submit" class="btn-bring">An Bring! senden</button>
 		</form>
 		{#if form && 'sent' in form}
@@ -76,10 +104,34 @@
 		padding: 0.75rem 1rem;
 		border-bottom: 1px solid var(--border);
 		font-size: 0.975rem;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
 	}
 
 	.item-list li:last-child {
 		border-bottom: none;
+	}
+
+	.list-toggle {
+		font-size: 0.75rem;
+		font-family: inherit;
+		padding: 0.2rem 0.6rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		background: var(--surface-raised, #f5f5f5);
+		color: var(--text-muted);
+		cursor: pointer;
+		white-space: nowrap;
+		flex-shrink: 0;
+		transition: background 0.15s, color 0.15s;
+	}
+
+	.list-toggle:hover {
+		background: var(--green);
+		color: white;
+		border-color: var(--green);
 	}
 
 	.actions {
@@ -119,7 +171,7 @@
 		font-size: 0.875rem;
 	}
 
-@media (min-width: 768px) {
+	@media (min-width: 768px) {
 		.shopping-card {
 			max-width: 480px;
 		}
