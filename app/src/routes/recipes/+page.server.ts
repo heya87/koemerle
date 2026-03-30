@@ -10,7 +10,8 @@ export const load: PageServerLoad = async () => {
 };
 
 export const actions: Actions = {
-	delete: async ({ request }) => {
+	delete: async ({ request, locals }) => {
+		if (!locals.user) return fail(401);
 		const formData = await request.formData();
 		const id = Number(formData.get('id'));
 		if (!id) return fail(400, { message: 'Ungültige ID' });
