@@ -30,8 +30,12 @@ if (users.length === 0) {
 }
 
 for (const user of users) {
-	await auth.api.signUpEmail({ body: user });
-	console.log(`Created user: ${user.email}`);
+	const result = await auth.api.signUpEmail({ body: user });
+	if (result.user) {
+		console.log(`Created user: ${user.email}`);
+	} else {
+		console.log(`User already exists, skipping: ${user.email}`);
+	}
 }
 
 await client.end();
