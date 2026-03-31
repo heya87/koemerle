@@ -16,7 +16,10 @@ const handleBetterAuth: Handle = async ({ event, resolve }) => {
 	const isLoginPage = event.url.pathname === '/login';
 
 	if (!event.locals.user && !isAuthRoute && !isLoginPage) {
-		return redirect(302, '/login');
+		if (event.request.method === 'GET') {
+			return redirect(302, '/login');
+		}
+		return new Response('Unauthorized', { status: 401 });
 	}
 
 	return svelteKitHandler({ event, resolve, auth, building });
