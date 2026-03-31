@@ -7,7 +7,10 @@
 
 <div class="page-header">
 	<h1>Rezepte</h1>
-	<a href="/recipes/new" class="btn-new">+ Neues Rezept</a>
+	<div class="header-actions">
+		<a href="/recipes/import" class="btn-import">Fooby Import</a>
+		<a href="/recipes/new" class="btn-new">+ Neues Rezept</a>
+	</div>
 </div>
 
 {#if data.recipes.length === 0}
@@ -93,6 +96,31 @@
 		align-items: center;
 		justify-content: space-between;
 		margin-bottom: 1.5rem;
+	}
+
+	.header-actions {
+		display: flex;
+		gap: 0.75rem;
+		align-items: center;
+	}
+
+	.btn-import {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.55rem 1rem;
+		font-size: 0.9rem;
+		font-weight: 500;
+		font-family: inherit;
+		text-decoration: none;
+		background: var(--surface);
+		color: var(--text-muted);
+		border-radius: var(--radius);
+		border: 1.5px solid var(--border-strong);
+		transition: color 0.15s;
+	}
+
+	.btn-import:hover {
+		color: var(--text);
 	}
 
 	.btn-new {
