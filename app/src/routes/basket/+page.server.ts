@@ -4,6 +4,8 @@ import { db } from '$lib/server/db';
 import { basketItems } from '$lib/server/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { getWeekStart, generateBasketMatchKey, mergeBasketItems } from '$lib/server/ingredients';
+import { fetchCurrentBasket } from '$lib/server/bioabo';
+import { env } from '$env/dynamic/private';
 
 export const load: PageServerLoad = async () => {
 	const weekStart = getWeekStart();
@@ -13,7 +15,8 @@ export const load: PageServerLoad = async () => {
 		.where(eq(basketItems.weekStart, weekStart))
 		.orderBy(basketItems.id);
 
-	return { weekStart, items };
+	const bioaboConfigured = !!(env.BIOABO_EMAIL && env.BIOABO_PASSWORD);
+	return { weekStart, items, bioaboConfigured };
 };
 
 export const actions: Actions = {
@@ -56,5 +59,32 @@ export const actions: Actions = {
 		await db.delete(basketItems).where(
 			and(eq(basketItems.id, id), eq(basketItems.weekStart, weekStart))
 		);
+	},
+
+	sync: async ({ locals }) => {
+		if (!locals.user) return fail(401);
+
+		let synced: Awaited<ReturnType<typeof fetchCurrentBasket>>;
+		try {
+			synced = await fetchCurrentBasket();
+		} catch (e) {
+			return fail(500, { message: `Sync fehlgeschlagen: ${String(e)}` });
+		}
+
+		if (synced.length === 0) {
+			return fail(400, { message: 'Keine Lieferung gefunden oder Korb ist leer.' });
+		}
+
+		const weekStart = getWeekStart();
+
+		// Replace existing basket for this week
+		await db.delete(basketItems).where(eq(basketItems.weekStart, weekStart));
+
+		for (const item of synced) {
+			const qty = Number.isInteger(item.amount) ? String(item.amount) : item.amount.toFixed(1);
+			const displayText = `${qty} ${item.unit} ${item.name}`;
+			const matchKey = generateBasketMatchKey(displayText);
+			await db.insert(basketItems).values({ weekStart, displayText, matchKey });
+		}
 	}
 };
