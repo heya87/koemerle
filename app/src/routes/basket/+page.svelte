@@ -8,6 +8,11 @@
 <div class="page-header">
 	<h1>Gemüsekorb</h1>
 	<span class="week-label">Woche ab {data.weekStart}</span>
+	{#if data.bioaboConfigured}
+		<form method="post" action="?/sync" use:enhance class="sync-form">
+			<button type="submit" class="btn-sync">↻ Von Biogmüsabo</button>
+		</form>
+	{/if}
 </div>
 
 <div class="basket-card">
@@ -50,6 +55,28 @@
 	.week-label {
 		font-size: 0.875rem;
 		color: var(--text-muted);
+	}
+
+	.sync-form {
+		margin-left: auto;
+	}
+
+	.btn-sync {
+		padding: 0.4rem 0.875rem;
+		font-size: 0.85rem;
+		font-family: inherit;
+		font-weight: 500;
+		background: var(--surface);
+		color: var(--text-muted);
+		border: 1.5px solid var(--border-strong);
+		border-radius: var(--radius);
+		cursor: pointer;
+		white-space: nowrap;
+		transition: color 0.15s;
+	}
+
+	.btn-sync:hover {
+		color: var(--text);
 	}
 
 	.basket-card {
