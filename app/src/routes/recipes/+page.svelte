@@ -70,19 +70,21 @@
 							<a href={recipe.recipeUrl} target="_blank" rel="noopener">Öffnen</a>
 						{/if}
 					</td>
-					<td class="col-actions">
-						<a href="/recipes/{recipe.id}/edit">Bearbeiten</a>
-						<form method="post" action="?/delete" use:enhance>
-							<input type="hidden" name="id" value={recipe.id} />
-							<button
-								type="submit"
-								onclick={(e) => {
-									if (!confirm(`"${recipe.name}" wirklich löschen?`)) e.preventDefault();
-								}}
-							>
-								Löschen
-							</button>
-						</form>
+					<td>
+						<div class="col-actions">
+							<a href="/recipes/{recipe.id}/edit">Bearbeiten</a>
+							<form method="post" action="?/delete" use:enhance>
+								<input type="hidden" name="id" value={recipe.id} />
+								<button
+									type="submit"
+									onclick={(e) => {
+										if (!confirm(`"${recipe.name}" wirklich löschen?`)) e.preventDefault();
+									}}
+								>
+									Löschen
+								</button>
+							</form>
+						</div>
 					</td>
 				</tr>
 			{/each}

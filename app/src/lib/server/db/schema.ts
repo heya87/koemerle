@@ -58,3 +58,11 @@ export const activityLog = pgTable('activity_log', {
 	message: text('message').notNull(),
 	createdAt: timestamp('created_at').notNull().defaultNow()
 });
+
+// Synonym/alias pairs for ingredient matching.
+// alias -> canonical: e.g. "randen" -> "rande"
+export const ingredientSynonyms = pgTable('ingredient_synonyms', {
+	id: serial('id').primaryKey(),
+	canonical: text('canonical').notNull(),
+	alias: text('alias').notNull().unique()
+});
