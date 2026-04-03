@@ -93,10 +93,10 @@
 	let modalStartDay: Day = $state('monday');
 	let modalStartSlot: Slot = $state('lunch');
 	let notNeededChecked: Set<string> = $state(new Set());
+	let modalDirect: boolean = $state(false);
 
-
-
-	function openModal() {
+	function openModal(direct = false) {
+		modalDirect = direct;
 		notNeededChecked = new Set();
 		dialog?.showModal();
 	}
@@ -185,9 +185,9 @@
 			method="post"
 			action="?/getSuggestion"
 			use:enhance={() => {
-				return ({ update }) => {
+				return async ({ update }) => {
 					closeModal();
-					update();
+					await update();
 				};
 			}}
 		>
@@ -247,7 +247,11 @@
 
 			<div class="modal-footer">
 				<button type="button" class="btn-modal-cancel" onclick={closeModal}>Abbrechen</button>
-				<button type="submit" class="btn-modal-submit">Vorschlag erstellen</button>
+				<button
+					type="submit"
+					formaction={modalDirect ? '?/quickPlan' : '?/getSuggestion'}
+					class="btn-modal-submit"
+				>Vorschlag erstellen</button>
 			</div>
 		</form>
 	</div>
@@ -286,7 +290,7 @@
 {:else if data.meta?.planningStartDay}
 	<div class="confirmed-bar">
 		<span class="confirmed-label">Plan bestätigt</span>
-		<button class="btn-replan" type="button" onclick={openModal}>Neu vorschlagen</button>
+		<button class="btn-replan" type="button" onclick={() => openModal(true)}>Neu vorschlagen</button>
 	</div>
 {:else}
 	<div class="no-plan-bar">
@@ -405,15 +409,15 @@
 							ondrop={(e) => onDrop(e, day, slot)}
 						>
 								{#if entry}
-									<div
-										class="cell-filled"
-										class:is-dragging={dragFrom?.day === day && dragFrom?.slot === slot}
-										class:not-needed={notNeeded}
-										draggable="true"
-										ondragstart={(e) => onDragStart(e, day, slot)}
-										ondragend={onDragEnd}
-									>
-										<span class="cell-name">
+									<div class="cell-filled">
+										<div
+											class="cell-name-chip"
+											class:is-dragging={dragFrom?.day === day && dragFrom?.slot === slot}
+											class:not-needed={notNeeded}
+											draggable="true"
+											ondragstart={(e) => onDragStart(e, day, slot)}
+											ondragend={onDragEnd}
+										>
 											{#if notNeeded}
 												Nicht benötigt
 											{:else if entryUrl(entry)}
@@ -421,7 +425,7 @@
 											{:else}
 												{entryLabel(entry)}
 											{/if}
-										</span>
+										</div>
 										{#if draft !== null}
 											<button class="btn-clear-cell" title="Entfernen" onclick={() => removeDraftEntry(day, slot)}>✕</button>
 										{:else}
@@ -1017,6 +1021,9 @@
 		.plan-grid {
 			display: block;
 			overflow-x: auto;
+			border: 1.5px solid var(--border-strong);
+			border-radius: var(--radius-lg);
+			box-shadow: var(--shadow);
 		}
 
 		table {
@@ -1024,7 +1031,6 @@
 			border-collapse: collapse;
 			background: var(--surface);
 			border-radius: var(--radius-lg);
-			box-shadow: var(--shadow);
 			min-width: 700px;
 		}
 
@@ -1082,37 +1088,53 @@
 			display: flex;
 			align-items: flex-start;
 			gap: 0.25rem;
-			padding: 0.6rem 0.75rem;
+			padding: 0.5rem 0.6rem;
 			height: 100%;
-			cursor: grab;
-			transition: opacity 0.15s;
 		}
 
-		.cell-filled:active {
+		.cell-name-chip {
+			flex: 1;
+			display: flex;
+			align-items: center;
+			gap: 0.25rem;
+			background: var(--bg);
+			border: 1px solid var(--border-strong);
+			border-radius: var(--radius);
+			padding: 0.3rem 0.6rem;
+			font-size: 0.875rem;
+			line-height: 1.3;
+			cursor: grab;
+			transition: opacity 0.15s, box-shadow 0.15s;
+			min-width: 0;
+		}
+
+		.cell-name-chip:hover {
+			box-shadow: 0 1px 4px rgba(42,37,32,0.1);
+		}
+
+		.cell-name-chip:active {
 			cursor: grabbing;
 		}
 
-		.cell-filled.is-dragging {
+		.cell-name-chip.is-dragging {
 			opacity: 0.35;
 		}
 
-		.cell-filled.not-needed .cell-name {
+		.cell-name-chip.not-needed {
 			color: var(--text-light);
 			font-style: italic;
+			border-style: dashed;
 		}
 
-		.cell-name {
-			flex: 1;
-			font-size: 0.875rem;
-			line-height: 1.35;
-		}
-
-		.cell-name a {
+		.cell-name-chip a {
 			color: var(--text);
 			text-decoration: none;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
 		}
 
-		.cell-name a:hover {
+		.cell-name-chip a:hover {
 			color: var(--green);
 			text-decoration: underline;
 		}
@@ -1162,13 +1184,6 @@
 
 		.btn-add-cell:disabled {
 			cursor: default;
-		}
-
-		.no-slot {
-			display: block;
-			padding: 0.6rem 0.75rem;
-			color: var(--border);
-			font-size: 0.875rem;
 		}
 
 		.cell-form {

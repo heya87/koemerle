@@ -30,6 +30,35 @@ export function stripAccents(key: string): string {
 }
 
 /**
+ * Strips the most common German plural suffix (-n) from a word.
+ * Conservative: only applies to words longer than 5 chars to avoid mangling short words.
+ * Covers: Karotten→Karotte, Randen→Rande, Tomaten→Tomate, Zwiebeln→Zwiebel.
+ */
+function stripGermanPlural(word: string): string {
+	if (word.length > 5 && word.endsWith('n')) return word.slice(0, -1);
+	return word;
+}
+
+/**
+ * The matching contract. A KeyNormalizer maps a raw ingredient key to a
+ * canonical comparison form. Swap the implementation in createKeyNormalizer
+ * to change the matching strategy without touching any call sites.
+ */
+export type KeyNormalizer = (key: string) => string;
+
+/**
+ * Creates a KeyNormalizer from a synonym alias map (alias → canonical).
+ * Normalization pipeline: lowercase → strip accents → strip German plural suffix → synonym lookup.
+ */
+export function createKeyNormalizer(aliasMap: Map<string, string>): KeyNormalizer {
+	return (key: string): string => {
+		const base = stripAccents(key.toLowerCase().trim());
+		const stemmed = stripGermanPlural(base);
+		return aliasMap.get(stemmed) ?? aliasMap.get(base) ?? stemmed;
+	};
+}
+
+/**
  * Returns the Monday of the week containing the given date, as YYYY-MM-DD.
  */
 export function getWeekStart(date: Date = new Date()): string {
