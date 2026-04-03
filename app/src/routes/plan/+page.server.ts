@@ -188,32 +188,27 @@ export const actions: Actions = {
 
 		const startIdx = ALL_SLOTS.findIndex(([d, s]) => d === startDay && s === startSlot);
 
-		const clearedSlots = new Set(
-			ALL_SLOTS.slice(startIdx)
-				.map(([d, s]) => `${d}-${s}`)
-				.filter((k) => notNeededKeys.has(k))
-		);
-		const usedIds = new Set(
-			existing
-				.filter((e) => !clearedSlots.has(`${e.day}-${e.slot}`))
-				.map((e) => e.recipeId)
-				.filter((id) => id !== null)
-		);
+		// Entries before startIdx are preserved as-is. Their recipes count as "used"
+		// to avoid cross-boundary duplicates. Entries from startIdx onwards are fully
+		// replaced — don't let the old plan exclude recipes from the new suggestion.
+		const postStartKeys = new Set(ALL_SLOTS.slice(startIdx).map(([d, s]) => `${d}-${s}`));
+		const preStartEntries = existing.filter((e) => !postStartKeys.has(`${e.day}-${e.slot}`));
+
+		const usedIds = new Set(preStartEntries.map((e) => e.recipeId).filter((id) => id !== null));
 		const available = scored.filter((r) => !usedIds.has(r.id));
 
 		type QuickEntry = { day: Day; slot: Slot; recipeId: number | null; notNeeded: boolean };
-		const entries: QuickEntry[] = [];
+		const newEntries: QuickEntry[] = [];
 
 		for (const [day, slot] of ALL_SLOTS.slice(startIdx)) {
 			if (notNeededKeys.has(`${day}-${slot}`)) {
-				entries.push({ day, slot, recipeId: null, notNeeded: true });
+				newEntries.push({ day, slot, recipeId: null, notNeeded: true });
 				continue;
 			}
-			if (existing.some((e) => e.day === day && e.slot === slot)) continue;
 			const recipe = available.shift();
 			if (!recipe) continue;
 			usedIds.add(recipe.id);
-			entries.push({ day, slot, recipeId: recipe.id, notNeeded: false });
+			newEntries.push({ day, slot, recipeId: recipe.id, notNeeded: false });
 		}
 
 		const userName = user.name ?? user.email;
@@ -228,18 +223,29 @@ export const actions: Actions = {
 
 		await db.delete(mealPlanEntries).where(eq(mealPlanEntries.weekStart, weekStart));
 
-		if (entries.length > 0) {
-			await db.insert(mealPlanEntries).values(
-				entries.map((e) => ({
-					weekStart,
-					day: e.day,
-					slot: e.slot,
-					recipeId: e.notNeeded ? null : (e.recipeId ?? null),
-					freeText: e.notNeeded ? NOT_NEEDED : null,
-					updatedBy: userName,
-					updatedAt: new Date()
-				}))
-			);
+		const allEntries = [
+			...preStartEntries.map((e) => ({
+				weekStart,
+				day: e.day,
+				slot: e.slot,
+				recipeId: e.recipeId,
+				freeText: e.freeText,
+				updatedBy: e.updatedBy,
+				updatedAt: e.updatedAt
+			})),
+			...newEntries.map((e) => ({
+				weekStart,
+				day: e.day,
+				slot: e.slot,
+				recipeId: e.notNeeded ? null : (e.recipeId ?? null),
+				freeText: e.notNeeded ? NOT_NEEDED : null,
+				updatedBy: userName,
+				updatedAt: new Date()
+			}))
+		];
+
+		if (allEntries.length > 0) {
+			await db.insert(mealPlanEntries).values(allEntries);
 		}
 
 		await db.insert(activityLog).values({
