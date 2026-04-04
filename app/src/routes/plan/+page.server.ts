@@ -1,31 +1,13 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { recipes, basketItems, mealPlanEntries, weekMeta, activityLog, ingredientSynonyms } from '$lib/server/db/schema';
+import { recipes, basketItems, mealPlanEntries, weekMeta, activityLog, ingredientGroups, plantFoods } from '$lib/server/db/schema';
 import { eq, and } from 'drizzle-orm';
-import { getWeekStart, createKeyNormalizer } from '$lib/server/ingredients';
-
-type Day = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
-type Slot = 'lunch' | 'dinner';
+import { getWeekStart, createKeyNormalizer, buildAliasMap } from '$lib/server/ingredients';
+import { suggestPlan, ALL_SLOTS } from '$lib/server/planning';
+import type { Day, Slot } from '$lib/server/planning';
 
 const NOT_NEEDED = '__not_needed__';
-
-const ALL_SLOTS: [Day, Slot][] = [
-	['monday', 'lunch'],
-	['monday', 'dinner'],
-	['tuesday', 'lunch'],
-	['tuesday', 'dinner'],
-	['wednesday', 'lunch'],
-	['wednesday', 'dinner'],
-	['thursday', 'lunch'],
-	['thursday', 'dinner'],
-	['friday', 'lunch'],
-	['friday', 'dinner'],
-	['saturday', 'lunch'],
-	['saturday', 'dinner'],
-	['sunday', 'lunch'],
-	['sunday', 'dinner']
-];
 
 const DAY_LABELS: Record<Day, string> = {
 	monday: 'Montag',
@@ -52,19 +34,42 @@ const VALID_DAYS: Day[] = [
 export const load: PageServerLoad = async () => {
 	const weekStart = getWeekStart();
 
-	const [allRecipes, basket, entries, metaRows] = await Promise.all([
+	const [allRecipes, basket, entries, metaRows, groups, plantFoodRows] = await Promise.all([
 		db.select().from(recipes).orderBy(recipes.name),
 		db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
 		db.select().from(mealPlanEntries).where(eq(mealPlanEntries.weekStart, weekStart)),
-		db.select().from(weekMeta).where(eq(weekMeta.weekStart, weekStart))
+		db.select().from(weekMeta).where(eq(weekMeta.weekStart, weekStart)),
+		db.select().from(ingredientGroups),
+		db.select().from(plantFoods)
 	]);
+
+	const normalize = createKeyNormalizer(buildAliasMap(groups));
+
+	const plantKeySet = new Set(plantFoodRows.map((p) => normalize(p.matchKey)));
+	const plantLabelMap = new Map(plantFoodRows.map((p) => [normalize(p.matchKey), p.label]));
+
+	// Collect unique plant foods across all planned meals this week
+	const foundPlants = new Map<string, string>(); // normalizedKey -> label
+	for (const entry of entries) {
+		if (!entry.recipeId) continue;
+		const recipe = allRecipes.find((r) => r.id === entry.recipeId);
+		if (!recipe) continue;
+		for (const key of recipe.matchKeys) {
+			const norm = normalize(key);
+			if (plantKeySet.has(norm) && !foundPlants.has(norm)) {
+				foundPlants.set(norm, plantLabelMap.get(norm) ?? key);
+			}
+		}
+	}
 
 	return {
 		weekStart,
 		allRecipes,
 		basket,
 		entries,
-		meta: metaRows[0] ?? null
+		meta: metaRows[0] ?? null,
+		plantCount: foundPlants.size,
+		plantGoal: 30
 	};
 };
 
@@ -85,72 +90,52 @@ export const actions: Actions = {
 
 
 		const weekStart = getWeekStart();
-		const [basket, allRecipes, existing, synonymRows] = await Promise.all([
+		const [basket, allRecipes, existing, groups] = await Promise.all([
 			db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
 			db.select().from(recipes),
 			db.select().from(mealPlanEntries).where(eq(mealPlanEntries.weekStart, weekStart)),
-			db.select().from(ingredientSynonyms)
+			db.select().from(ingredientGroups)
 		]);
 
-		const aliasMap = new Map(synonymRows.map((s) => [s.alias, s.canonical]));
-		const normalize = createKeyNormalizer(aliasMap);
-
+		const normalize = createKeyNormalizer(buildAliasMap(groups));
 		const basketKeys = new Set(basket.map((b) => normalize(b.matchKey)));
-
-		const scored = allRecipes
-			.map((r) => ({ ...r, score: r.matchKeys.filter((k) => basketKeys.has(normalize(k))).length }))
-			.filter((r) => r.score > 0)
-			.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-
 		const startIdx = ALL_SLOTS.findIndex(([d, s]) => d === startDay && s === startSlot);
 
 		// Slots from startIdx that are marked not-needed will be cleared, so don't count
 		// their current recipes as "used" — they should be available for other slots.
-		const clearedSlots = new Set(
+		const clearedSlotKeys = new Set(
 			ALL_SLOTS.slice(startIdx)
 				.map(([d, s]) => `${d}-${s}`)
 				.filter((k) => notNeededKeys.has(k))
 		);
 		const usedIds = new Set(
 			existing
-				.filter((e) => !clearedSlots.has(`${e.day}-${e.slot}`))
+				.filter((e) => !clearedSlotKeys.has(`${e.day}-${e.slot}`))
 				.map((e) => e.recipeId)
-				.filter((id) => id !== null)
+				.filter((id): id is number => id !== null)
 		);
-		const available = scored.filter((r) => !usedIds.has(r.id));
+		const occupiedSlotKeys = new Set(
+			existing
+				.filter((e) => !clearedSlotKeys.has(`${e.day}-${e.slot}`))
+				.map((e) => `${e.day}-${e.slot}`)
+		);
 
-		type SuggestionEntry = {
-			day: Day;
-			slot: Slot;
-			recipeId: number | null;
-			recipeName: string | null;
-			recipeUrl: string | null;
-			notNeeded: boolean;
-		};
+		const planned = suggestPlan({
+			allRecipes,
+			basketKeys,
+			usedIds,
+			occupiedSlotKeys,
+			notNeededSlotKeys: notNeededKeys,
+			slots: ALL_SLOTS.slice(startIdx),
+			normalize
+		});
 
-		const suggestion: SuggestionEntry[] = [];
-
-		for (const [day, slot] of ALL_SLOTS.slice(startIdx)) {
-			// not-needed takes priority over existing entries
-			if (notNeededKeys.has(`${day}-${slot}`)) {
-				suggestion.push({ day, slot, recipeId: null, recipeName: null, recipeUrl: null, notNeeded: true });
-				continue;
-			}
-
-			if (existing.some((e) => e.day === day && e.slot === slot)) continue;
-
-			const recipe = available.shift();
-			if (!recipe) continue;
-			usedIds.add(recipe.id);
-			suggestion.push({
-				day,
-				slot,
-				recipeId: recipe.id,
-				recipeName: recipe.name,
-				recipeUrl: recipe.recipeUrl ?? null,
-				notNeeded: false
-			});
-		}
+		const recipeById = new Map(allRecipes.map((r) => [r.id, r]));
+		const suggestion = planned.map((e) => ({
+			...e,
+			recipeName: e.recipeId ? (recipeById.get(e.recipeId)?.name ?? null) : null,
+			recipeUrl: e.recipeId ? (recipeById.get(e.recipeId)?.recipeUrl ?? null) : null
+		}));
 
 		return { suggestion, startDay, startSlot };
 	},
@@ -170,22 +155,15 @@ export const actions: Actions = {
 		}
 
 		const weekStart = getWeekStart();
-		const [basket, allRecipes, existing, synonymRows] = await Promise.all([
+		const [basket, allRecipes, existing, groups] = await Promise.all([
 			db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
 			db.select().from(recipes),
 			db.select().from(mealPlanEntries).where(eq(mealPlanEntries.weekStart, weekStart)),
-			db.select().from(ingredientSynonyms)
+			db.select().from(ingredientGroups)
 		]);
 
-		const aliasMap = new Map(synonymRows.map((s) => [s.alias, s.canonical]));
-		const normalize = createKeyNormalizer(aliasMap);
+		const normalize = createKeyNormalizer(buildAliasMap(groups));
 		const basketKeys = new Set(basket.map((b) => normalize(b.matchKey)));
-
-		const scored = allRecipes
-			.map((r) => ({ ...r, score: r.matchKeys.filter((k) => basketKeys.has(normalize(k))).length }))
-			.filter((r) => r.score > 0)
-			.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-
 		const startIdx = ALL_SLOTS.findIndex(([d, s]) => d === startDay && s === startSlot);
 
 		// Entries before startIdx are preserved as-is. Their recipes count as "used"
@@ -193,23 +171,19 @@ export const actions: Actions = {
 		// replaced — don't let the old plan exclude recipes from the new suggestion.
 		const postStartKeys = new Set(ALL_SLOTS.slice(startIdx).map(([d, s]) => `${d}-${s}`));
 		const preStartEntries = existing.filter((e) => !postStartKeys.has(`${e.day}-${e.slot}`));
+		const usedIds = new Set(
+			preStartEntries.map((e) => e.recipeId).filter((id): id is number => id !== null)
+		);
 
-		const usedIds = new Set(preStartEntries.map((e) => e.recipeId).filter((id) => id !== null));
-		const available = scored.filter((r) => !usedIds.has(r.id));
-
-		type QuickEntry = { day: Day; slot: Slot; recipeId: number | null; notNeeded: boolean };
-		const newEntries: QuickEntry[] = [];
-
-		for (const [day, slot] of ALL_SLOTS.slice(startIdx)) {
-			if (notNeededKeys.has(`${day}-${slot}`)) {
-				newEntries.push({ day, slot, recipeId: null, notNeeded: true });
-				continue;
-			}
-			const recipe = available.shift();
-			if (!recipe) continue;
-			usedIds.add(recipe.id);
-			newEntries.push({ day, slot, recipeId: recipe.id, notNeeded: false });
-		}
+		const newEntries = suggestPlan({
+			allRecipes,
+			basketKeys,
+			usedIds,
+			occupiedSlotKeys: new Set(),
+			notNeededSlotKeys: notNeededKeys,
+			slots: ALL_SLOTS.slice(startIdx),
+			normalize
+		});
 
 		const userName = user.name ?? user.email;
 

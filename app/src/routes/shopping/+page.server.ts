@@ -2,9 +2,9 @@ import { fail } from '@sveltejs/kit';
 import { createRequire } from 'node:module';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { recipes, basketItems, mealPlanEntries } from '$lib/server/db/schema';
+import { recipes, basketItems, mealPlanEntries, ingredientGroups } from '$lib/server/db/schema';
 import { eq, inArray } from 'drizzle-orm';
-import { getWeekStart } from '$lib/server/ingredients';
+import { getWeekStart, buildAliasMap, createKeyNormalizer } from '$lib/server/ingredients';
 import { computeShoppingList } from '$lib/server/shopping';
 import { env } from '$env/dynamic/private';
 
@@ -14,9 +14,10 @@ const BringApi = createRequire(import.meta.url)('bring-shopping') as any;
 async function loadShoppingData() {
 	const weekStart = getWeekStart();
 
-	const [entries, basket] = await Promise.all([
+	const [entries, basket, groups] = await Promise.all([
 		db.select().from(mealPlanEntries).where(eq(mealPlanEntries.weekStart, weekStart)),
-		db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart))
+		db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
+		db.select().from(ingredientGroups)
 	]);
 
 	const recipeIds = entries.map((e) => e.recipeId).filter((id): id is number => id !== null);
@@ -25,11 +26,13 @@ async function loadShoppingData() {
 		db.select({ name: recipes.name, ingredients: recipes.ingredients }).from(recipes)
 	]);
 
+	const normalize = createKeyNormalizer(buildAliasMap(groups));
 	const basketKeys = basket.map((b) => b.matchKey);
 	const shoppingList = computeShoppingList(
 		plannedRecipes.map((r) => r.ingredients),
 		basketKeys,
-		allRecipes
+		allRecipes,
+		normalize
 	);
 
 	return { weekStart, shoppingList };
