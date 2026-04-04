@@ -8,13 +8,13 @@
 	let { children, data }: { children: any; data: LayoutData } = $props();
 
 	let settingsDialog: HTMLDialogElement | undefined = $state();
-	let activeTab: 'synonyms' = $state('synonyms');
-	let newCanonical = $state('');
-	let newAlias = $state('');
+	let activeTab: 'groups' | 'plants' = $state('groups');
+	let newGroupLabel = $state('');
+	let newGroupKeys = $state('');
 
 	function openSettings() {
-		newCanonical = '';
-		newAlias = '';
+		newGroupLabel = '';
+		newGroupKeys = '';
 		settingsDialog?.showModal();
 	}
 
@@ -56,77 +56,139 @@
 				<button
 					type="button"
 					class="settings-tab"
-					class:active={activeTab === 'synonyms'}
-					onclick={() => (activeTab = 'synonyms')}
-				>Synonyme</button>
+					class:active={activeTab === 'groups'}
+					onclick={() => (activeTab = 'groups')}
+				>Zutaten-Gruppen</button>
+				<button
+					type="button"
+					class="settings-tab"
+					class:active={activeTab === 'plants'}
+					onclick={() => (activeTab = 'plants')}
+				>Pflanzliche Zutaten</button>
 			</nav>
 
-			{#if activeTab === 'synonyms'}
+			{#if activeTab === 'groups'}
 				<div class="settings-section">
 					<div class="settings-info-box">
-						Hier werden Synonyme erfasst, die beim Abgleich von Gemüsekorb-Inhalten mit Rezept-Zutaten verwendet werden.
-						Eine Variante (z.B. ein Dialektwort oder eine andere Schreibweise) wird einer Grundform zugeordnet —
-						z.B. "rüebli" → "rüben".
+						Zutatennamen die dasselbe meinen werden in einer Gruppe zusammengefasst.
+						Beim Abgleich von Gemüsekorb mit Rezepten werden alle Namen der Gruppe als gleichwertig behandelt.
+						Der erste Eintrag ist die Hauptform — alle anderen werden darauf normalisiert.
 					</div>
 
 					<table class="synonym-table">
 						<thead>
 							<tr>
-								<th>Grundform</th>
-								<th>Variante</th>
+								<th>Bezeichnung</th>
+								<th>Schlüssel (kommagetrennt)</th>
 								<th></th>
 							</tr>
 						</thead>
 						<tbody>
-							{#each data.synonyms as s}
+							{#each data.ingredientGroups as g}
 								<tr>
-									<td>{s.canonical}</td>
-									<td>{s.alias}</td>
+									<td>{g.label}</td>
+									<td class="col-key">{g.matchKeys.join(', ')}</td>
 									<td>
 										<form
 											method="post"
-											action="/settings?/deleteSynonym"
+											action="/settings?/deleteGroup"
 											use:enhance={() => async ({ update }) => {
 												await update();
 												await invalidateAll();
 											}}
 										>
-											<input type="hidden" name="id" value={s.id} />
+											<input type="hidden" name="id" value={g.id} />
 											<button type="submit" class="btn-delete-synonym">✕</button>
 										</form>
 									</td>
 								</tr>
 							{:else}
-								<tr><td colspan="3" class="empty-synonyms">Noch keine Synonyme.</td></tr>
+								<tr><td colspan="3" class="empty-synonyms">Noch keine Gruppen.</td></tr>
 							{/each}
 						</tbody>
 					</table>
 
 					<form
 						method="post"
-						action="/settings?/addSynonym"
+						action="/settings?/addGroup"
 						class="add-synonym-form"
 						use:enhance={() => async ({ update }) => {
 							await update();
 							await invalidateAll();
-							newCanonical = '';
-							newAlias = '';
+							newGroupLabel = '';
+							newGroupKeys = '';
 						}}
 					>
 						<input
 							type="text"
-							name="canonical"
-							placeholder="Grundform (z.B. rüben)"
-							bind:value={newCanonical}
+							name="label"
+							placeholder="Bezeichnung (z.B. Karotte)"
+							bind:value={newGroupLabel}
 							required
 						/>
 						<input
 							type="text"
-							name="alias"
-							placeholder="Variante (z.B. rüebli)"
-							bind:value={newAlias}
+							name="matchKeys"
+							placeholder="Schlüssel (z.B. rüebli, rüben, karotte)"
+							bind:value={newGroupKeys}
 							required
 						/>
+						<button type="submit" class="btn-add-synonym">Hinzufügen</button>
+					</form>
+				</div>
+			{/if}
+
+			{#if activeTab === 'plants'}
+				<div class="settings-section">
+					<div class="settings-info-box">
+						Zutaten, die beim Wochenplan auf die 30-Pflanzen-Zählung angerechnet werden.
+						Der Match-Schlüssel muss mit dem normalisierten Zutaten-Schlüssel der Rezepte übereinstimmen.
+					</div>
+
+					<table class="synonym-table">
+						<thead>
+							<tr>
+								<th>Bezeichnung</th>
+								<th>Match-Schlüssel</th>
+								<th></th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each data.plantFoods as p}
+								<tr>
+									<td>{p.label}</td>
+									<td class="col-key">{p.matchKey}</td>
+									<td>
+										<form
+											method="post"
+											action="/settings?/deletePlantFood"
+											use:enhance={() => async ({ update }) => {
+												await update();
+												await invalidateAll();
+											}}
+										>
+											<input type="hidden" name="id" value={p.id} />
+											<button type="submit" class="btn-delete-synonym">✕</button>
+										</form>
+									</td>
+								</tr>
+							{:else}
+								<tr><td colspan="3" class="empty-synonyms">Noch keine Einträge.</td></tr>
+							{/each}
+						</tbody>
+					</table>
+
+					<form
+						method="post"
+						action="/settings?/addPlantFood"
+						class="add-synonym-form"
+						use:enhance={() => async ({ update }) => {
+							await update();
+							await invalidateAll();
+						}}
+					>
+						<input type="text" name="label" placeholder="Bezeichnung (z.B. Karotte)" required />
+						<input type="text" name="matchKey" placeholder="Schlüssel (z.B. karotte)" required />
 						<button type="submit" class="btn-add-synonym">Hinzufügen</button>
 					</form>
 				</div>
@@ -338,6 +400,12 @@
 	.empty-synonyms {
 		color: var(--text-muted);
 		font-style: italic;
+	}
+
+	.col-key {
+		font-family: monospace;
+		font-size: 0.8rem;
+		color: var(--text-muted);
 	}
 
 	.btn-delete-synonym {

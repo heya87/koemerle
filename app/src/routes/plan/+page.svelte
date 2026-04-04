@@ -474,6 +474,24 @@
 	</table>
 </div>
 
+<!-- Plant diversity bar -->
+{#if draft === null}
+	{@const pct = Math.min(data.plantCount / data.plantGoal, 1)}
+	{@const full = data.plantCount >= data.plantGoal}
+	<div class="plant-bar">
+		<div class="plant-bar-header">
+			<span class="plant-bar-label">Pflanzliche Vielfalt</span>
+			<span class="plant-bar-count" class:plant-full={full}>
+				{#if full}🎉{:else}🌱{/if}
+				{data.plantCount} / {data.plantGoal}
+			</span>
+		</div>
+		<div class="plant-track">
+			<div class="plant-fill" style="width: {pct * 100}%" class:plant-fill-full={full}></div>
+		</div>
+	</div>
+{/if}
+
 <!-- Confirm bar (sticky bottom, only in draft mode) -->
 {#if draft !== null}
 	<div class="confirm-bar">
@@ -1009,6 +1027,60 @@
 	}
 
 	.btn-confirm:hover {
+		background: var(--green-dark);
+	}
+
+	/* ── Plant diversity bar ── */
+	.plant-bar {
+		margin-top: 1.25rem;
+		background: var(--surface);
+		border-radius: var(--radius);
+		box-shadow: var(--shadow);
+		padding: 0.875rem 1rem;
+	}
+
+	.plant-bar-header {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		margin-bottom: 0.5rem;
+	}
+
+	.plant-bar-label {
+		font-size: 0.8rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--text-muted);
+	}
+
+	.plant-bar-count {
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--text-muted);
+		transition: color 0.3s;
+	}
+
+	.plant-bar-count.plant-full {
+		color: var(--green-dark);
+	}
+
+	.plant-track {
+		height: 8px;
+		background: var(--bg);
+		border-radius: 999px;
+		overflow: hidden;
+		border: 1px solid var(--border);
+	}
+
+	.plant-fill {
+		height: 100%;
+		background: var(--green);
+		border-radius: 999px;
+		transition: width 0.4s ease;
+	}
+
+	.plant-fill.plant-fill-full {
 		background: var(--green-dark);
 	}
 

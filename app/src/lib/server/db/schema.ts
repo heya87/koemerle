@@ -59,10 +59,20 @@ export const activityLog = pgTable('activity_log', {
 	createdAt: timestamp('created_at').notNull().defaultNow()
 });
 
-// Synonym/alias pairs for ingredient matching.
-// alias -> canonical: e.g. "randen" -> "rande"
-export const ingredientSynonyms = pgTable('ingredient_synonyms', {
+// Equivalence groups for ingredient matching.
+// All keys in a group are treated as the same ingredient.
+// First key is the canonical form — all others normalize to it.
+// e.g. matchKeys: ['rüebli', 'rüben', 'karotte']
+export const ingredientGroups = pgTable('ingredient_groups', {
 	id: serial('id').primaryKey(),
-	canonical: text('canonical').notNull(),
-	alias: text('alias').notNull().unique()
+	label: text('label').notNull(),
+	matchKeys: text('match_keys').array().notNull().default([])
 });
+
+// Ingredient match keys that count toward the 30-plants-per-week goal.
+export const plantFoods = pgTable('plant_foods', {
+	id: serial('id').primaryKey(),
+	matchKey: text('match_key').notNull().unique(),
+	label: text('label').notNull()
+});
+

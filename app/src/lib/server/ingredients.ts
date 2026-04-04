@@ -47,6 +47,19 @@ function stripGermanPlural(word: string): string {
 export type KeyNormalizer = (key: string) => string;
 
 /**
+ * Builds an alias map from ingredient groups.
+ * First key in each group is canonical; all others map to it.
+ */
+export function buildAliasMap(groups: { matchKeys: string[] }[]): Map<string, string> {
+	const map = new Map<string, string>();
+	for (const group of groups) {
+		const [canonical, ...aliases] = group.matchKeys;
+		for (const alias of aliases) map.set(alias, canonical);
+	}
+	return map;
+}
+
+/**
  * Creates a KeyNormalizer from a synonym alias map (alias → canonical).
  * Normalization pipeline: lowercase → strip accents → strip German plural suffix → synonym lookup.
  */

@@ -8,6 +8,13 @@
       "when": 1774898585981,
       "tag": "0000_flimsy_blazing_skull",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1775227570065,
+      "tag": "0001_seed_defaults",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { generateMatchKeys, mergeBasketItems, stripAccents } from './ingredients';
+import { generateMatchKeys, mergeBasketItems, stripAccents, type KeyNormalizer } from './ingredients';
 
 // Suffix-based matching so "Meersalz", "Olivenöl", "Mineralwasser" etc. are also excluded.
 const PANTRY_SUFFIXES = ['salz', 'pfeffer', 'öl', 'wasser', 'balsamico', 'essig'];
@@ -27,12 +27,15 @@ export type ShoppingItem = { displayText: string; matchKey: string };
  * If an ingredient line matches the name of another recipe (e.g. "Kuchenteig"),
  * that recipe's own ingredients are expanded in place (one level deep).
  */
+const defaultNormalize: KeyNormalizer = (k) => stripAccents(k.toLowerCase().trim());
+
 export function computeShoppingList(
 	recipeIngredientsList: string[],
 	basketMatchKeys: string[],
-	expansionRecipes: { name: string; ingredients: string }[] = []
+	expansionRecipes: { name: string; ingredients: string }[] = [],
+	normalize: KeyNormalizer = defaultNormalize
 ): ShoppingItem[] {
-	const basketKeys = new Set(basketMatchKeys.map((k) => stripAccents(k.toLowerCase())));
+	const basketKeys = new Set(basketMatchKeys.map((k) => normalize(k)));
 
 	// Build expansion map: canonical recipe name key → ingredients text
 	const expansionMap = new Map<string, string>();
@@ -49,14 +52,16 @@ export function computeShoppingList(
 
 		const keys = generateMatchKeys(trimmed);
 		if (keys.length === 0) return;
-		const matchKey = stripAccents(keys.at(-1)!.toLowerCase());
+		const rawKey = stripAccents(keys.at(-1)!.toLowerCase());
+		const matchKey = normalize(keys.at(-1)!);
 
 		if (basketKeys.has(matchKey)) return;
 		if (isPantryStaple(matchKey)) return;
 
-		// Expand sub-recipe one level deep (e.g. "Kuchenteig" → Betty Bossi ingredients)
-		if (allowExpansion && expansionMap.has(matchKey)) {
-			const subIngredients = expansionMap.get(matchKey)!;
+		// Expand sub-recipe one level deep (e.g. "Kuchenteig" → Betty Bossi ingredients).
+		// Use rawKey so alias normalization doesn't accidentally match unrelated recipe names.
+		if (allowExpansion && expansionMap.has(rawKey)) {
+			const subIngredients = expansionMap.get(rawKey)!;
 			for (const subLine of subIngredients.split('\n')) {
 				processLine(subLine, false);
 			}
