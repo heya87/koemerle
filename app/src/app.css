@@ -2,6 +2,10 @@
 	box-sizing: border-box;
 }
 
+html {
+	overflow-x: hidden;
+}
+
 :root {
 	/* Colors */
 	--bg: #f5f3ee;
@@ -29,7 +33,7 @@
 	/* Layout */
 	--nav-h: 54px;
 	--tab-h: 58px;
-	--max-w: 960px;
+	--max-w: 1400px;
 }
 
 body {
@@ -40,6 +44,7 @@ body {
 	font-size: 16px;
 	line-height: 1.55;
 	-webkit-font-smoothing: antialiased;
+	overflow-x: hidden;
 }
 
 h1 {

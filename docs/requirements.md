@@ -28,16 +28,12 @@ The goal is to make weekly meal planning and shopping list creation require almo
 ### 2.1 Meal Planning
 
 * Plan meals on a **weekly basis**
-* Fixed weekly structure:
-
-  * **Monday to Sunday**
-  * Each day has **Lunch** and **Dinner**
-  * **Exception:** **Thursday lunch is not required**
+* Each day has **Lunch** and **Dinner** — no slot exceptions
 * Planning horizon for MVP:
 
   * **Current week only**
   * Week starts on **Monday**
-* A meal **cannot appear multiple times within the same week**
+* A meal **cannot appear multiple times within the same planning period**
 * The app should **auto-fill the week** based on suitable recipes
 * If there are not enough suitable recipes to fill all meal slots, the remaining slots should stay empty
 
@@ -355,13 +351,8 @@ The following is the suggested minimal first version based on the clarified requ
    * typing a meal name directly into the slot (free-text, stored on the plan entry only — not saved as a new recipe), or
    * selecting a recipe from the stored recipe set
    * Code should make it easy to later add a "save as recipe" flow for free-text entries
-10. Fixed weekly structure:
-
-* Monday to Sunday
-* lunch and dinner
-* no Thursday lunch
-
-11. Prevent the same meal from being used twice in the same week
+10. Flexible planning structure: lunch and dinner for every day, no slot exceptions
+11. Prevent the same meal from being used twice in the same planning period
 12. Generate a shopping list only for still-missing ingredients
 13. Merge duplicate ingredients automatically
 14. Exclude pantry staples from the generated shopping list

@@ -1,15 +1,17 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import { tick, onMount } from 'svelte';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	type Day = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
 	type Slot = 'lunch' | 'dinner';
+	type Course = 'main' | 'side';
 	type DraftEntry = {
-		day: Day;
+		date: string;
 		slot: Slot;
+		course: Course;
 		recipeId: number | null;
 		recipeName: string | null;
 		recipeUrl: string | null;
@@ -17,23 +19,27 @@
 	};
 
 	const NOT_NEEDED = '__not_needed__';
-
-	const DAYS: Day[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-	const DAY_LABELS: Record<Day, string> = {
-		monday: 'Montag', tuesday: 'Dienstag', wednesday: 'Mittwoch',
-		thursday: 'Donnerstag', friday: 'Freitag', saturday: 'Samstag', sunday: 'Sonntag'
-	};
 	const SLOT_LABELS: Record<Slot, string> = { lunch: 'Mittag', dinner: 'Abend' };
+	const COURSES: Course[] = ['main', 'side'];
+	const DESKTOP_DAYS = 7;
+	const MOBILE_VISIBLE = 5; // day cards visible at once on mobile
 
-
-
-	function slotKey(day: Day, slot: Slot) {
-		return `${day}-${slot}`;
+	// ── Date helpers ──
+	function addDays(dateStr: string, n: number): string {
+		const d = new Date(dateStr + 'T12:00:00Z');
+		d.setUTCDate(d.getUTCDate() + n);
+		return d.toISOString().split('T')[0];
 	}
 
-	function getRecipe(id: number | null) {
-		if (!id) return null;
-		return data.allRecipes.find((r) => r.id === id) ?? null;
+	function formatDayHeader(iso: string): string {
+		const d = new Date(iso + 'T12:00:00Z');
+		const names = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+		return `${names[d.getUTCDay()]}, ${d.getUTCDate()}.${d.getUTCMonth() + 1}.`;
+	}
+
+	function formatShortDate(iso: string): string {
+		const [, m, d] = iso.split('-');
+		return `${Number(d)}.${Number(m)}.`;
 	}
 
 	function formatDate(iso: string): string {
@@ -41,69 +47,170 @@
 		return `${d}.${m}.${y}`;
 	}
 
+	function getDatesBetween(start: string, end: string): string[] {
+		if (!start || !end || start > end) return [];
+		const dates: string[] = [];
+		const e = new Date(end + 'T12:00:00Z');
+		const c = new Date(start + 'T12:00:00Z');
+		while (c <= e) {
+			dates.push(c.toISOString().split('T')[0]);
+			c.setUTCDate(c.getUTCDate() + 1);
+		}
+		return dates;
+	}
+
+	// ── View navigation ──
+	let viewStartDate: string = $state(data.today);
+	let desktopDates = $derived(
+		Array.from({ length: DESKTOP_DAYS }, (_, i) => addDays(viewStartDate, i))
+	);
+	// Mobile: 7-card vertical strip (1 buffer + 5 visible + 1 buffer)
+	let mobileStripDates = $derived(
+		Array.from({ length: MOBILE_VISIBLE + 2 }, (_, i) => addDays(viewStartDate, i - 1))
+	);
+	// Desktop: 9-column strip (1 buffer + 7 visible + 1 buffer), slides by 1 column = 1/7 container
+	let desktopTrackDates = $derived(
+		Array.from({ length: 9 }, (_, i) => addDays(viewStartDate, i - 1))
+	);
+
+	// ── Slide tracks ──
+	const SLIDE_MS = 550;
+	let isAnimating = $state(false);
+	let mobileWrapper: HTMLElement | undefined = $state();
+	let mobileTrack: HTMLElement | undefined = $state();
+	let desktopTrack: HTMLElement | undefined = $state();
+
+	function desktopColWidth(): number {
+		return (desktopTrack?.parentElement?.offsetWidth ?? 0) / 7;
+	}
+
+	function mobileCardHeight(): number {
+		// strip has MOBILE_VISIBLE + 2 equal-height cards
+		return (mobileTrack?.offsetHeight ?? 0) / (MOBILE_VISIBLE + 2);
+	}
+
+	onMount(() => {
+		if (desktopTrack) {
+			desktopTrack.style.transform = `translateX(${-desktopColWidth()}px)`;
+		}
+		if (mobileWrapper && mobileTrack) {
+			const cardH = mobileCardHeight();
+			mobileWrapper.style.height = `${MOBILE_VISIBLE * cardH}px`;
+			mobileTrack.style.transform = `translateY(${-cardH}px)`;
+		}
+	});
+
+	async function navDay(delta: number) {
+		if (isAnimating) return;
+		isAnimating = true;
+
+		const easing = 'cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+
+		// Mobile: slide vertically by exactly 1 card height
+		if (mobileTrack) {
+			const cardH = mobileCardHeight();
+			const target = delta > 0 ? -2 * cardH : 0;
+			mobileTrack.style.transition = `transform ${SLIDE_MS}ms ${easing}`;
+			mobileTrack.style.transform = `translateY(${target}px)`;
+		}
+
+		// Desktop: slide exactly 1 column width in pixels
+		if (desktopTrack) {
+			const colW = desktopColWidth();
+			const target = delta > 0 ? -2 * colW : 0;
+			desktopTrack.style.transition = `transform ${SLIDE_MS}ms ${easing}`;
+			desktopTrack.style.transform = `translateX(${target}px)`;
+		}
+
+		await new Promise<void>((r) => setTimeout(r, SLIDE_MS + 20));
+
+		viewStartDate = addDays(viewStartDate, delta);
+		await tick();
+
+		if (mobileWrapper && mobileTrack) {
+			const cardH = mobileCardHeight();
+			mobileWrapper.style.height = `${MOBILE_VISIBLE * cardH}px`;
+			mobileTrack.style.transition = 'none';
+			mobileTrack.style.transform = `translateY(${-cardH}px)`;
+		}
+		if (desktopTrack) {
+			desktopTrack.style.transition = 'none';
+			desktopTrack.style.transform = `translateX(${-desktopColWidth()}px)`;
+		}
+
+		isAnimating = false;
+	}
+
 	// ── Draft state ──
 	let draft: DraftEntry[] | null = $state(null);
-	let draftStartDay: Day | null = $state(null);
+	let draftStartDate: string | null = $state(null);
+	let draftEndDate: string | null = $state(null);
 	let draftStartSlot: Slot | null = $state(null);
 
 	$effect(() => {
 		if (form && 'suggestion' in form && Array.isArray((form as any).suggestion)) {
 			draft = (form as any).suggestion.map((e: DraftEntry) => ({ ...e }));
-			draftStartDay = (form as any).startDay;
+			draftStartDate = (form as any).startDate;
+			draftEndDate = (form as any).endDate;
 			draftStartSlot = (form as any).startSlot;
+			if (draftStartDate) viewStartDate = draftStartDate;
 		}
 	});
 
-	function getDraftEntry(day: Day, slot: Slot): DraftEntry | null {
-		return draft?.find((e) => e.day === day && e.slot === slot) ?? null;
+	function getDraftEntry(date: string, slot: Slot, course: Course): DraftEntry | null {
+		return draft?.find((e) => e.date === date && e.slot === slot && e.course === course) ?? null;
 	}
 
-	function removeDraftEntry(day: Day, slot: Slot) {
-		draft = draft?.filter((e) => !(e.day === day && e.slot === slot)) ?? null;
+	function removeDraftEntry(date: string, slot: Slot, course: Course) {
+		draft = draft?.filter((e) => !(e.date === date && e.slot === slot && e.course === course)) ?? null;
 	}
 
 	// Unified display — draft when active, otherwise DB
 	type DbEntry = (typeof data.entries)[number];
-	function getEntry(day: Day, slot: Slot): DraftEntry | DbEntry | null {
-		if (draft !== null) return getDraftEntry(day, slot);
-		return data.entries.find((e) => e.day === day && e.slot === slot) ?? null;
+	function getEntry(date: string, slot: Slot, course: Course): DraftEntry | DbEntry | null {
+		if (draft !== null) return getDraftEntry(date, slot, course);
+		return data.entries.find((e) => e.date === date && e.slot === slot && e.course === course) ?? null;
 	}
 
-	function isNotNeededEntry(entry: DraftEntry | DbEntry | null): boolean {
-		if (!entry) return false;
-		if ('notNeeded' in entry) return entry.notNeeded;
-		return (entry as DbEntry).freeText === NOT_NEEDED;
+	function isSlotNotNeeded(date: string, slot: Slot): boolean {
+		const main = getEntry(date, slot, 'main');
+		if (!main) return false;
+		if ('notNeeded' in main) return main.notNeeded;
+		return (main as DbEntry).freeText === NOT_NEEDED;
+	}
+
+	function getRecipe(id: number | null) {
+		if (!id) return null;
+		return data.allRecipes.find((r) => r.id === id) ?? null;
 	}
 
 	function entryLabel(entry: DraftEntry | DbEntry | null): string | null {
-		if (!entry || isNotNeededEntry(entry)) return null;
+		if (!entry) return null;
 		if ('recipeName' in entry) return entry.recipeName;
 		const recipe = getRecipe((entry as DbEntry).recipeId ?? null);
 		return recipe?.name ?? (entry as DbEntry).freeText ?? null;
 	}
 
 	function entryUrl(entry: DraftEntry | DbEntry | null): string | null {
-		if (!entry || isNotNeededEntry(entry)) return null;
+		if (!entry) return null;
 		if ('recipeUrl' in entry) return (entry as DraftEntry).recipeUrl;
 		return getRecipe((entry as DbEntry).recipeId ?? null)?.recipeUrl ?? null;
 	}
 
 	// ── Modal ──
 	let dialog: HTMLDialogElement | undefined = $state();
-	let modalStartDay: Day = $state('monday');
+	let modalStartDate: string = $state(data.today);
+	let modalEndDate: string = $state(addDays(data.today, 6));
 	let modalStartSlot: Slot = $state('lunch');
-	let notNeededChecked: Set<string> = $state(new Set());
 	let modalDirect: boolean = $state(false);
+	let notNeededChecked: Set<string> = $state(new Set());
 
-	function openModal(direct = false) {
-		modalDirect = direct;
-		notNeededChecked = new Set();
-		dialog?.showModal();
-	}
+	let modalDates = $derived(getDatesBetween(modalStartDate, modalEndDate));
 
-	function closeModal() {
-		dialog?.close();
-	}
+	// Clamp endDate so it never goes before startDate
+	$effect(() => {
+		if (modalEndDate < modalStartDate) modalEndDate = modalStartDate;
+	});
 
 	function toggleNotNeeded(key: string) {
 		const next = new Set(notNeededChecked);
@@ -112,23 +219,52 @@
 		notNeededChecked = next;
 	}
 
+	function openModal(direct = false) {
+		modalDirect = direct;
+		modalStartDate = data.today;
+		modalEndDate = addDays(data.today, 6);
+		modalStartSlot = 'lunch';
+		notNeededChecked = new Set();
+		dialog?.showModal();
+	}
+
+	function closeModal() {
+		dialog?.close();
+	}
+
 	// ── Editing (post-confirmation) ──
 	let editing: string | null = $state(null);
+	let editingPopup: { date: string; slot: Slot; course: Course; top: number; left: number; width: number } | null = $state(null);
+
+	function entryKey(date: string, slot: Slot, course: Course) {
+		return `${date}-${slot}-${course}`;
+	}
+
+	function openEditing(date: string, slot: Slot, course: Course, triggerEl: HTMLElement) {
+		const rect = triggerEl.getBoundingClientRect();
+		editing = entryKey(date, slot, course);
+		editingPopup = { date, slot, course, top: rect.bottom + 6, left: rect.left, width: Math.max(rect.width, 260) };
+	}
+
+	function closeEditing() {
+		editing = null;
+		editingPopup = null;
+	}
 
 	// ── Drag & drop ──
-	let dragFrom: { day: Day; slot: Slot } | null = $state(null);
+	let dragFrom: { date: string; slot: Slot; course: Course } | null = $state(null);
 	let dragOverKey: string | null = $state(null);
 
-	function onDragStart(e: DragEvent, day: Day, slot: Slot) {
-		dragFrom = { day, slot };
+	function onDragStart(e: DragEvent, date: string, slot: Slot, course: Course) {
+		dragFrom = { date, slot, course };
 		e.dataTransfer!.effectAllowed = 'move';
 	}
 
-	function onDragOver(e: DragEvent, day: Day, slot: Slot) {
+	function onDragOver(e: DragEvent, date: string, slot: Slot, course: Course) {
 		if (!dragFrom) return;
 		e.preventDefault();
 		e.dataTransfer!.dropEffect = 'move';
-		dragOverKey = slotKey(day, slot);
+		dragOverKey = entryKey(date, slot, course);
 	}
 
 	function onDragLeave(e: DragEvent) {
@@ -137,29 +273,31 @@
 		}
 	}
 
-	async function onDrop(e: DragEvent, toDay: Day, toSlot: Slot) {
+	async function onDrop(e: DragEvent, toDate: string, toSlot: Slot, toCourse: Course) {
 		e.preventDefault();
 		dragOverKey = null;
 		if (!dragFrom) return;
-		const { day: fromDay, slot: fromSlot } = dragFrom;
+		const { date: fromDate, slot: fromSlot, course: fromCourse } = dragFrom;
 		dragFrom = null;
-		if (fromDay === toDay && fromSlot === toSlot) return;
+		if (fromDate === toDate && fromSlot === toSlot && fromCourse === toCourse) return;
 
 		if (draft !== null) {
-			const fromIdx = draft.findIndex((e) => e.day === fromDay && e.slot === fromSlot);
-			const toIdx = draft.findIndex((e) => e.day === toDay && e.slot === toSlot);
+			const fromIdx = draft.findIndex((e) => e.date === fromDate && e.slot === fromSlot && e.course === fromCourse);
+			const toIdx = draft.findIndex((e) => e.date === toDate && e.slot === toSlot && e.course === toCourse);
 			if (fromIdx === -1) return;
 			draft = draft.map((e, i) => {
-				if (i === fromIdx) return { ...e, day: toDay, slot: toSlot };
-				if (i === toIdx) return { ...e, day: fromDay, slot: fromSlot };
+				if (i === fromIdx) return { ...e, date: toDate, slot: toSlot, course: toCourse };
+				if (i === toIdx) return { ...e, date: fromDate, slot: fromSlot, course: fromCourse };
 				return e;
 			});
 		} else {
 			const fd = new FormData();
-			fd.append('fromDay', fromDay);
+			fd.append('fromDate', fromDate);
 			fd.append('fromSlot', fromSlot);
-			fd.append('toDay', toDay);
+			fd.append('fromCourse', fromCourse);
+			fd.append('toDate', toDate);
 			fd.append('toSlot', toSlot);
+			fd.append('toCourse', toCourse);
 			await fetch('?/moveSlot', { method: 'POST', body: fd });
 			await invalidateAll();
 		}
@@ -172,6 +310,63 @@
 
 	let draftCount = $derived(draft?.filter((e) => !e.notNeeded).length ?? 0);
 </script>
+
+{#snippet courseEntry(date: string, slot: Slot, course: Course)}
+	{@const entry = getEntry(date, slot, course)}
+	{@const key = entryKey(date, slot, course)}
+	{@const isDragging = dragFrom?.date === date && dragFrom?.slot === slot && dragFrom?.course === course}
+	<div
+		class="course-row"
+		class:is-side={course === 'side'}
+		class:drag-over={dragOverKey === key}
+		ondragover={(e) => onDragOver(e, date, slot, course)}
+		ondragleave={onDragLeave}
+		ondrop={(e) => onDrop(e, date, slot, course)}
+	>
+		{#if entry}
+			<span
+				class="meal-chip"
+				class:is-dragging={isDragging}
+				draggable="true"
+				title={entryLabel(entry) ?? undefined}
+				ondragstart={(e) => onDragStart(e, date, slot, course)}
+				ondragend={onDragEnd}
+			>
+				{#if entryUrl(entry)}
+					<a href={entryUrl(entry)!} target="_blank" rel="noopener">{entryLabel(entry)}</a>
+				{:else}
+					{entryLabel(entry)}
+				{/if}
+			</span>
+			{#if draft !== null}
+				<button class="btn-clear-entry" title="Entfernen" onclick={() => removeDraftEntry(date, slot, course)}>✕</button>
+			{:else}
+				<form method="post" action="?/clearSlot" use:enhance>
+					<input type="hidden" name="date" value={date} />
+					<input type="hidden" name="slot" value={slot} />
+					<input type="hidden" name="course" value={course} />
+					<button type="submit" class="btn-clear-entry" title="Leeren">✕</button>
+				</form>
+			{/if}
+		{:else if draft === null}
+			<button
+				class="btn-add-entry"
+				class:btn-add-side={course === 'side'}
+				class:is-editing={editing === key}
+				onclick={(e) => openEditing(date, slot, course, (e.currentTarget as HTMLElement).closest('.day-slot-cell, .slot-courses') ?? e.currentTarget as HTMLElement)}
+				disabled={!data.meta}
+			>
+				{#if !data.meta}
+					{course === 'main' ? '—' : ''}
+				{:else if course === 'side'}
+					+ Beilage
+				{:else}
+					+ Hauptgang
+				{/if}
+			</button>
+		{/if}
+	</div>
+{/snippet}
 
 <!-- Modal -->
 <dialog bind:this={dialog} class="modal-dialog">
@@ -192,15 +387,15 @@
 			}}
 		>
 			<div class="modal-section">
-				<p class="modal-label">Ab wann soll der Plan befüllt werden?</p>
-				<div class="start-fields">
+				<p class="modal-label">Planungszeitraum</p>
+				<div class="date-range-fields">
 					<label>
-						<span>Erster Tag</span>
-						<select name="startDay" bind:value={modalStartDay}>
-							{#each DAYS as day}
-								<option value={day}>{DAY_LABELS[day]}</option>
-							{/each}
-						</select>
+						<span>Von</span>
+						<input type="date" name="startDate" bind:value={modalStartDate} required />
+					</label>
+					<label>
+						<span>Bis</span>
+						<input type="date" name="endDate" bind:value={modalEndDate} min={modalStartDate} required />
 					</label>
 					<label>
 						<span>Erste Mahlzeit</span>
@@ -212,38 +407,40 @@
 				</div>
 			</div>
 
-			<div class="modal-section">
-				<p class="modal-label">Welche Mahlzeiten werden diese Woche nicht benötigt?</p>
-				<div class="nn-grid">
-					{#each DAYS as day}
-						<div class="nn-day">
-							<span class="nn-day-name">{DAY_LABELS[day]}</span>
-							<div class="nn-slots">
-								<label class="nn-check">
-									<input
-										type="checkbox"
-										name="notNeeded"
-										value="{day}-lunch"
-										checked={notNeededChecked.has(`${day}-lunch`)}
-										onchange={() => toggleNotNeeded(`${day}-lunch`)}
-									/>
-									Mittag
-								</label>
-								<label class="nn-check">
-									<input
-										type="checkbox"
-										name="notNeeded"
-										value="{day}-dinner"
-										checked={notNeededChecked.has(`${day}-dinner`)}
-										onchange={() => toggleNotNeeded(`${day}-dinner`)}
-									/>
-									Abend
-								</label>
+			{#if modalDates.length > 0}
+				<div class="modal-section">
+					<p class="modal-label">Nicht benötigt</p>
+					<div class="nn-grid">
+						{#each modalDates as date}
+							<div class="nn-day">
+								<span class="nn-day-name">{formatDayHeader(date)}</span>
+								<div class="nn-slots">
+									<label class="nn-check">
+										<input
+											type="checkbox"
+											name="notNeeded"
+											value="{date}-lunch"
+											checked={notNeededChecked.has(`${date}-lunch`)}
+											onchange={() => toggleNotNeeded(`${date}-lunch`)}
+										/>
+										Mittag
+									</label>
+									<label class="nn-check">
+										<input
+											type="checkbox"
+											name="notNeeded"
+											value="{date}-dinner"
+											checked={notNeededChecked.has(`${date}-dinner`)}
+											onchange={() => toggleNotNeeded(`${date}-dinner`)}
+										/>
+										Abend
+									</label>
+								</div>
 							</div>
-						</div>
-					{/each}
+						{/each}
+					</div>
 				</div>
-			</div>
+			{/if}
 
 			<div class="modal-footer">
 				<button type="button" class="btn-modal-cancel" onclick={closeModal}>Abbrechen</button>
@@ -259,8 +456,12 @@
 
 <!-- Page header -->
 <div class="page-header">
-	<h1>Wochenplan</h1>
-	<span class="week-label">Woche ab {formatDate(data.weekStart)}</span>
+	<h1>Mahlzeitenplan</h1>
+	{#if data.meta}
+		<span class="plan-period-label">
+			{formatShortDate(data.meta.planStart)} – {formatShortDate(data.meta.planEnd)}
+		</span>
+	{/if}
 </div>
 
 <!-- Status bar -->
@@ -268,7 +469,10 @@
 	<div class="draft-banner">
 		<div class="draft-info">
 			<span class="draft-label">Vorschlag</span>
-			<span class="draft-hint">Mahlzeiten per Drag & Drop verschieben oder mit ✕ entfernen.</span>
+			<span class="draft-hint">
+				{formatShortDate(draftStartDate!)} – {formatShortDate(draftEndDate!)} &middot;
+				Mahlzeiten per Drag &amp; Drop verschieben oder mit ✕ entfernen.
+			</span>
 		</div>
 		<div class="draft-meta-actions">
 			<button
@@ -281,197 +485,127 @@
 			<button
 				class="btn-discard"
 				type="button"
-				onclick={() => { draft = null; draftStartDay = null; draftStartSlot = null; }}
+				onclick={() => { draft = null; draftStartDate = null; draftEndDate = null; draftStartSlot = null; }}
 			>
 				Verwerfen
 			</button>
 		</div>
 	</div>
-{:else if data.meta?.planningStartDay}
+{:else if data.meta}
 	<div class="confirmed-bar">
-		<span class="confirmed-label">Plan bestätigt</span>
+		<span class="confirmed-label">
+			Plan: {formatDate(data.meta.planStart)} – {formatDate(data.meta.planEnd)}
+		</span>
 		<button class="btn-replan" type="button" onclick={() => openModal(true)}>Neu vorschlagen</button>
 	</div>
 {:else}
 	<div class="no-plan-bar">
 		<button class="btn-open-modal" type="button" onclick={openModal}>Vorschlag erstellen</button>
-		<span class="no-plan-hint">Noch kein Plan für diese Woche.</span>
+		<span class="no-plan-hint">Noch kein Plan erstellt.</span>
 	</div>
 {/if}
 
-<!-- Mobile: day cards -->
-<div class="day-cards">
-	{#each DAYS as day}
-		<div class="day-card">
-			<div class="day-name">{DAY_LABELS[day]}</div>
-			{#each ['lunch', 'dinner'] as slotStr}
-				{@const slot = slotStr as Slot}
-				{@const entry = getEntry(day, slot)}
-				{@const key = slotKey(day, slot)}
-				{@const notNeeded = isNotNeededEntry(entry)}
-					<div
-						class="slot-row"
-						class:drag-over={dragOverKey === key}
-						ondragover={(e) => onDragOver(e, day, slot)}
-						ondragleave={onDragLeave}
-						ondrop={(e) => onDrop(e, day, slot)}
-					>
-						<span class="slot-label">{SLOT_LABELS[slot]}</span>
-						<div class="slot-content">
-							{#if entry}
-								<span
-									class="meal-name"
-									class:is-dragging={dragFrom?.day === day && dragFrom?.slot === slot}
-									class:not-needed={notNeeded}
-									draggable="true"
-									ondragstart={(e) => onDragStart(e, day, slot)}
-									ondragend={onDragEnd}
-								>
-									{#if notNeeded}
-										Nicht benötigt
-									{:else if entryUrl(entry)}
-										<a href={entryUrl(entry)!} target="_blank" rel="noopener">{entryLabel(entry)}</a>
-									{:else}
-										{entryLabel(entry)}
-									{/if}
-								</span>
-								{#if draft !== null}
-									<button class="btn-clear" title="Entfernen" onclick={() => removeDraftEntry(day, slot)}>✕</button>
-								{:else}
-									<form method="post" action="?/clearSlot" use:enhance>
-										<input type="hidden" name="day" value={day} />
-										<input type="hidden" name="slot" value={slot} />
-										<button type="submit" class="btn-clear" title="Leeren">✕</button>
-									</form>
-								{/if}
-							{:else if draft === null && editing === key}
-								<form
-									method="post"
-									action="?/setSlot"
-									use:enhance={() => ({ update }) => { editing = null; update(); }}
-									class="inline-form"
-								>
-									<input type="hidden" name="day" value={day} />
-									<input type="hidden" name="slot" value={slot} />
-									<select name="recipeId" class="recipe-select">
-										<option value="">— Freitext —</option>
-										{#each data.allRecipes as r}
-											<option value={r.id}>{r.name}</option>
-										{/each}
-									</select>
-									<input type="text" name="freeText" placeholder="Freitext..." class="free-input" />
-									<div class="inline-actions">
-										<button type="submit" class="btn-save-slot">OK</button>
-										<button type="button" class="btn-cancel-slot" onclick={() => (editing = null)}>✕</button>
-									</div>
-								</form>
-							{:else if draft === null}
-								<button
-									class="btn-add-slot"
-									onclick={() => (editing = key)}
-									disabled={!data.meta?.planningStartDay}
-								>
-									{data.meta?.planningStartDay ? '+ eintragen' : '—'}
-								</button>
-							{/if}
-						</div>
-					</div>
-			{/each}
-		</div>
-	{/each}
+<!-- Pager navigation -->
+<div class="pager-nav">
+	<button class="btn-nav" onclick={() => navDay(-1)} aria-label="Vorheriger Tag">&#8249;</button>
+	<button class="btn-today" onclick={() => (viewStartDate = data.today)}>Heute</button>
+	<button class="btn-nav" onclick={() => navDay(1)} aria-label="Nächster Tag">&#8250;</button>
 </div>
 
-<!-- Desktop: grid table -->
-<div class="plan-grid">
-	<table>
-		<thead>
-			<tr>
-				<th class="th-slot"></th>
-				{#each DAYS as day}
-					<th>{DAY_LABELS[day]}</th>
-				{/each}
-			</tr>
-		</thead>
-		<tbody>
-			{#each ['lunch', 'dinner'] as slotStr}
-				{@const slot = slotStr as Slot}
-				<tr>
-					<td class="td-label">{SLOT_LABELS[slot]}</td>
-					{#each DAYS as day}
-						{@const entry = getEntry(day, slot)}
-						{@const key = slotKey(day, slot)}
-						{@const notNeeded = isNotNeededEntry(entry)}
-						<td
-							class="td-cell"
-							class:drag-over={dragOverKey === key}
-							ondragover={(e) => onDragOver(e, day, slot)}
-							ondragleave={onDragLeave}
-							ondrop={(e) => onDrop(e, day, slot)}
-						>
-								{#if entry}
-									<div class="cell-filled">
-										<div
-											class="cell-name-chip"
-											class:is-dragging={dragFrom?.day === day && dragFrom?.slot === slot}
-											class:not-needed={notNeeded}
-											draggable="true"
-											ondragstart={(e) => onDragStart(e, day, slot)}
-											ondragend={onDragEnd}
-										>
-											{#if notNeeded}
-												Nicht benötigt
-											{:else if entryUrl(entry)}
-												<a href={entryUrl(entry)!} target="_blank" rel="noopener">{entryLabel(entry)}</a>
-											{:else}
-												{entryLabel(entry)}
-											{/if}
-										</div>
+{#snippet dayCardsList(dates: string[])}
+	<div class="day-cards">
+		{#each dates as date}
+			<div class="day-card">
+				<div class="day-date-col" class:is-today={date === data.today}>
+					{formatDayHeader(date)}
+				</div>
+				<div class="day-slots">
+					{#each ['lunch', 'dinner'] as slotStr}
+						{@const slot = slotStr as Slot}
+						<div class="slot-row">
+							<span class="slot-label">{SLOT_LABELS[slot]}</span>
+							<div class="slot-courses">
+								{#if isSlotNotNeeded(date, slot)}
+									<div class="course-row">
+										<span class="meal-chip not-needed">Nicht benötigt</span>
 										{#if draft !== null}
-											<button class="btn-clear-cell" title="Entfernen" onclick={() => removeDraftEntry(day, slot)}>✕</button>
+											<button class="btn-clear-entry" onclick={() => removeDraftEntry(date, slot, 'main')}>✕</button>
 										{:else}
 											<form method="post" action="?/clearSlot" use:enhance>
-												<input type="hidden" name="day" value={day} />
+												<input type="hidden" name="date" value={date} />
 												<input type="hidden" name="slot" value={slot} />
-												<button type="submit" class="btn-clear-cell" title="Leeren">✕</button>
+												<input type="hidden" name="course" value="main" />
+												<button type="submit" class="btn-clear-entry">✕</button>
 											</form>
 										{/if}
 									</div>
-								{:else if draft === null && editing === key}
-									<form
-										method="post"
-										action="?/setSlot"
-										use:enhance={() => ({ update }) => { editing = null; update(); }}
-										class="cell-form"
-									>
-										<input type="hidden" name="day" value={day} />
-										<input type="hidden" name="slot" value={slot} />
-										<select name="recipeId" class="cell-select">
-											<option value="">— Freitext —</option>
-											{#each data.allRecipes as r}
-												<option value={r.id}>{r.name}</option>
-											{/each}
-										</select>
-										<input type="text" name="freeText" placeholder="Freitext..." class="cell-input" />
-										<div class="cell-form-actions">
-											<button type="submit" class="btn-ok">OK</button>
-											<button type="button" class="btn-cancel-cell" onclick={() => (editing = null)}>✕</button>
-										</div>
-									</form>
-								{:else if draft === null}
-									<button
-										class="btn-add-cell"
-										onclick={() => (editing = key)}
-										disabled={!data.meta?.planningStartDay}
-									>
-										{data.meta?.planningStartDay ? '+' : '—'}
-									</button>
+								{:else}
+									{#each COURSES as course}
+										{@render courseEntry(date, slot, course)}
+									{/each}
 								{/if}
-						</td>
+							</div>
+						</div>
 					{/each}
-				</tr>
+				</div>
+			</div>
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet dayColsList(dates: string[])}
+	{#each dates as date}
+		<div class="day-col">
+			<div class="day-col-header" class:today-col={date === data.today}>
+				{formatDayHeader(date)}
+			</div>
+			{#each ['lunch', 'dinner'] as slotStr}
+				{@const slot = slotStr as Slot}
+				<div class="day-slot-cell" class:today-col={date === data.today}>
+					{#if isSlotNotNeeded(date, slot)}
+						<div class="cell-not-needed">
+							<span class="meal-chip not-needed">Nicht benötigt</span>
+							{#if draft !== null}
+								<button class="btn-clear-entry" onclick={() => removeDraftEntry(date, slot, 'main')}>✕</button>
+							{:else}
+								<form method="post" action="?/clearSlot" use:enhance>
+									<input type="hidden" name="date" value={date} />
+									<input type="hidden" name="slot" value={slot} />
+									<input type="hidden" name="course" value="main" />
+									<button type="submit" class="btn-clear-entry">✕</button>
+								</form>
+							{/if}
+						</div>
+					{:else}
+						{#each COURSES as course}
+							{@render courseEntry(date, slot, course)}
+						{/each}
+					{/if}
+				</div>
 			{/each}
-		</tbody>
-	</table>
+		</div>
+	{/each}
+{/snippet}
+
+<!-- Mobile: vertical strip (1 buffer + 5 visible + 1 buffer) -->
+<div class="slide-wrapper" bind:this={mobileWrapper}>
+	<div class="mobile-track" bind:this={mobileTrack}>
+		{@render dayCardsList(mobileStripDates)}
+	</div>
+</div>
+
+<!-- Desktop: fixed label column + 3-panel sliding day columns -->
+<div class="plan-grid">
+	<div class="label-col">
+		<div class="label-spacer"></div>
+		<div class="label-slot">Mittag</div>
+		<div class="label-slot">Abend</div>
+	</div>
+	<div class="days-area">
+		<div class="desktop-track" bind:this={desktopTrack}>
+			{@render dayColsList(desktopTrackDates)}
+		</div>
+	</div>
 </div>
 
 <!-- Plant diversity bar -->
@@ -504,18 +638,47 @@
 			use:enhance={() => {
 				return ({ update }) => {
 					draft = null;
-					draftStartDay = null;
+					draftStartDate = null;
+					draftEndDate = null;
 					draftStartSlot = null;
 					update();
 				};
 			}}
 		>
-			<input type="hidden" name="startDay" value={draftStartDay} />
+			<input type="hidden" name="startDate" value={draftStartDate} />
+			<input type="hidden" name="endDate" value={draftEndDate} />
 			<input type="hidden" name="startSlot" value={draftStartSlot} />
 			<input type="hidden" name="entries" value={JSON.stringify(draft)} />
 			<button type="submit" class="btn-confirm">Plan bestätigen</button>
 		</form>
 	</div>
+{/if}
+
+<!-- Entry popup (fixed, outside all overflow containers) -->
+{#if editingPopup}
+	<div class="entry-popup-backdrop" onclick={closeEditing}></div>
+	<form
+		method="post"
+		action="?/setSlot"
+		use:enhance={() => async ({ update }) => { closeEditing(); await update(); }}
+		class="entry-popup"
+		style="top: {editingPopup.top}px; left: {editingPopup.left}px; width: {editingPopup.width}px;"
+	>
+		<input type="hidden" name="date" value={editingPopup.date} />
+		<input type="hidden" name="slot" value={editingPopup.slot} />
+		<input type="hidden" name="course" value={editingPopup.course} />
+		<select name="recipeId" class="entry-select">
+			<option value="">— Freitext —</option>
+			{#each data.allRecipes as r}
+				<option value={r.id}>{r.name}</option>
+			{/each}
+		</select>
+		<input type="text" name="freeText" placeholder="Freitext..." class="entry-input" />
+		<div class="entry-form-actions">
+			<button type="submit" class="btn-ok">OK</button>
+			<button type="button" class="btn-cancel-entry" onclick={closeEditing}>✕</button>
+		</div>
+	</form>
 {/if}
 
 <style>
@@ -525,7 +688,7 @@
 		border-radius: var(--radius-lg);
 		box-shadow: 0 8px 32px rgba(42, 37, 32, 0.18);
 		padding: 0;
-		width: min(520px, 92vw);
+		width: min(480px, 92vw);
 		max-height: 88vh;
 		overflow-y: auto;
 	}
@@ -575,13 +738,13 @@
 		margin: 0 0 0.875rem;
 	}
 
-	.start-fields {
+	.date-range-fields {
 		display: flex;
 		gap: 0.75rem;
 		flex-wrap: wrap;
 	}
 
-	.start-fields label {
+	.date-range-fields label {
 		display: flex;
 		flex-direction: column;
 		gap: 0.35rem;
@@ -592,7 +755,7 @@
 		min-width: 140px;
 	}
 
-	.start-fields select {
+	.date-range-fields input[type='date'] {
 		padding: 0.55rem 0.75rem;
 		font-size: 0.95rem;
 		font-family: inherit;
@@ -604,11 +767,17 @@
 		cursor: pointer;
 	}
 
+	.date-range-fields input[type='date']:focus {
+		border-color: var(--green);
+	}
+
 	/* Nicht benötigt grid */
 	.nn-grid {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.35rem;
+		max-height: 220px;
+		overflow-y: auto;
 	}
 
 	.nn-day {
@@ -620,7 +789,7 @@
 	.nn-day-name {
 		font-size: 0.8rem;
 		color: var(--text-muted);
-		width: 88px;
+		width: 100px;
 		flex-shrink: 0;
 	}
 
@@ -641,6 +810,18 @@
 	.nn-check input {
 		width: auto;
 		accent-color: var(--green);
+		cursor: pointer;
+	}
+
+	.start-slot-field select {
+		padding: 0.55rem 0.75rem;
+		font-size: 0.95rem;
+		font-family: inherit;
+		border: 1.5px solid var(--border-strong);
+		border-radius: var(--radius);
+		background: var(--bg);
+		color: var(--text);
+		outline: none;
 		cursor: pointer;
 	}
 
@@ -696,7 +877,7 @@
 		flex-wrap: wrap;
 	}
 
-	.week-label {
+	.plan-period-label {
 		font-size: 0.875rem;
 		color: var(--text-muted);
 	}
@@ -805,102 +986,110 @@
 		color: var(--text-muted);
 	}
 
-	/* ── Mobile day cards ── */
-	.day-cards {
+	/* ── Pager navigation ── */
+	.pager-nav {
 		display: flex;
-		flex-direction: column;
-		gap: 0.6rem;
-	}
-
-	.plan-grid {
-		display: none;
-	}
-
-	.day-card {
-		background: var(--surface);
-		border-radius: var(--radius);
-		box-shadow: var(--shadow);
-		overflow: hidden;
-	}
-
-	.day-name {
-		font-weight: 600;
-		color: var(--text-muted);
-		background: var(--bg);
-		padding: 0.5rem 1rem;
-		border-bottom: 1px solid var(--border);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		font-size: 0.75rem;
-	}
-
-	.slot-row {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.75rem;
-		padding: 0.65rem 1rem;
-		border-bottom: 1px solid var(--border);
-		transition: background 0.1s;
-	}
-
-	.slot-row:last-child {
-		border-bottom: none;
-	}
-
-	.slot-row.drag-over {
-		background: var(--green-light);
-	}
-
-	.slot-label {
-		font-size: 0.8rem;
-		color: var(--text-muted);
-		font-weight: 500;
-		width: 52px;
-		flex-shrink: 0;
-		padding-top: 0.15rem;
-	}
-
-	.slot-content {
-		flex: 1;
-		display: flex;
-		align-items: flex-start;
+		align-items: center;
 		gap: 0.5rem;
-		min-width: 0;
+		margin-bottom: 0.75rem;
 	}
 
-	.meal-name {
+	.btn-nav {
+		background: none;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius);
+		padding: 0.3rem 0.7rem;
+		font-size: 1.1rem;
+		font-family: inherit;
+		color: var(--text);
+		cursor: pointer;
+		line-height: 1;
+		transition: background 0.15s;
+	}
+
+	.btn-nav:hover {
+		background: var(--surface);
+	}
+
+	.btn-today {
+		font-size: 0.8rem;
+		font-family: inherit;
+		background: none;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius);
+		padding: 0.3rem 0.65rem;
+		color: var(--text-muted);
+		cursor: pointer;
+		transition: background 0.15s, color 0.15s;
+	}
+
+	.btn-today:hover {
+		background: var(--surface);
+		color: var(--text);
+	}
+
+	/* ── Shared course-row styles (mobile + desktop) ── */
+	.course-row {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		min-height: 1.8rem;
+		border-radius: var(--radius);
+		transition: background 0.1s;
+		padding: 0.1rem 0.25rem;
+	}
+
+	.course-row.drag-over {
+		background: var(--green-light);
+		outline: 1.5px dashed var(--green);
+	}
+
+	.meal-chip {
 		flex: 1;
 		font-size: 0.9rem;
 		cursor: grab;
 		border-radius: 4px;
-		padding: 0.1rem 0.25rem;
+		padding: 0.1rem 0.15rem;
 		transition: opacity 0.15s;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
-	.meal-name:active {
+	.meal-chip:active {
 		cursor: grabbing;
 	}
 
-	.meal-name.is-dragging {
+	.meal-chip.is-dragging {
 		opacity: 0.4;
 	}
 
-	.meal-name.not-needed {
+	.meal-chip.not-needed {
 		color: var(--text-light);
 		font-style: italic;
 	}
 
-	.meal-name a {
+	.meal-chip a {
 		color: var(--text);
 		text-decoration: none;
 	}
 
-	.meal-name a:hover {
+	.meal-chip a:hover {
 		color: var(--green);
 		text-decoration: underline;
 	}
 
-	.btn-clear {
+	.is-side .meal-chip {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+	}
+
+	.is-side .meal-chip a {
+		color: var(--text-muted);
+	}
+
+	.btn-clear-entry {
 		background: none;
 		border: none;
 		color: var(--text-light);
@@ -912,43 +1101,68 @@
 		flex-shrink: 0;
 	}
 
-	.btn-clear:hover {
+	.btn-clear-entry:hover {
 		color: var(--red);
 		background: #fdf0f0;
 	}
 
-	.btn-add-slot {
+	.btn-add-entry {
 		background: none;
 		border: 1px dashed var(--border-strong);
 		border-radius: var(--radius);
 		color: var(--text-light);
 		font-size: 0.8rem;
-		padding: 0.25rem 0.75rem;
+		padding: 0.35rem 0.75rem;
 		cursor: pointer;
 		font-family: inherit;
 		transition: border-color 0.15s, color 0.15s;
+		min-height: 2rem;
 	}
 
-	.btn-add-slot:hover:not(:disabled) {
+	.btn-add-entry:hover:not(:disabled) {
 		border-color: var(--green);
 		color: var(--green);
 	}
 
-	.btn-add-slot:disabled {
+	.btn-add-entry:disabled {
 		cursor: default;
+		border-color: transparent;
 	}
 
-	.inline-form {
-		flex: 1;
+	.btn-add-side {
+		font-size: 0.75rem;
+		padding: 0.15rem 0.5rem;
+		opacity: 0.6;
+	}
+
+	.btn-add-side:hover:not(:disabled) {
+		opacity: 1;
+	}
+
+	.entry-popup-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 99;
+	}
+
+	.entry-popup {
+		position: fixed;
+		z-index: 100;
+		background: var(--surface);
+		border: 1.5px solid var(--green);
+		border-radius: var(--radius);
+		box-shadow: 0 4px 20px rgba(42, 37, 32, 0.18);
+		padding: 0.5rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
+		min-width: 200px;
 	}
 
-	.recipe-select,
-	.free-input {
+	.entry-select,
+	.entry-input {
 		width: 100%;
-		padding: 0.45rem 0.6rem;
+		padding: 0.35rem 0.5rem;
 		font-size: 0.875rem;
 		font-family: inherit;
 		border: 1.5px solid var(--border-strong);
@@ -958,18 +1172,18 @@
 		outline: none;
 	}
 
-	.recipe-select:focus,
-	.free-input:focus {
+	.entry-select:focus,
+	.entry-input:focus {
 		border-color: var(--green);
 	}
 
-	.inline-actions {
+	.entry-form-actions {
 		display: flex;
 		gap: 0.4rem;
 	}
 
-	.btn-save-slot {
-		padding: 0.3rem 0.75rem;
+	.btn-ok {
+		padding: 0.25rem 0.6rem;
 		font-size: 0.8rem;
 		font-family: inherit;
 		font-weight: 600;
@@ -980,8 +1194,8 @@
 		cursor: pointer;
 	}
 
-	.btn-cancel-slot {
-		padding: 0.3rem 0.6rem;
+	.btn-cancel-entry {
+		padding: 0.25rem 0.5rem;
 		font-size: 0.8rem;
 		font-family: inherit;
 		background: none;
@@ -989,6 +1203,116 @@
 		border-radius: var(--radius);
 		color: var(--text-muted);
 		cursor: pointer;
+	}
+
+	/* ── Slide wrapper ── */
+	.slide-wrapper {
+		overflow: hidden;
+		width: 100%;
+	}
+
+	.mobile-track {
+		/* height set by JS; cards stack naturally */
+	}
+
+	/* ── Mobile day cards ── */
+	.day-cards {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		border: 1.5px solid var(--border-strong);
+		border-radius: 18px;
+		overflow: hidden;
+		box-shadow: var(--shadow-md);
+		background: var(--border-strong);
+	}
+
+	.plan-grid {
+		display: none;
+	}
+
+	.day-card {
+		display: flex;
+		flex-direction: row;
+		background: var(--surface);
+	}
+
+	.day-card:first-child {
+		border-radius: 16px 16px 0 0;
+		overflow: hidden;
+	}
+
+	.day-card:last-child {
+		border-radius: 0 0 16px 16px;
+		overflow: hidden;
+	}
+
+	/* Rotated date sidebar — reads bottom to top */
+	.day-date-col {
+		writing-mode: vertical-rl;
+		transform: rotate(180deg);
+		text-orientation: mixed;
+		font-size: 0.68rem;
+		font-weight: 700;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		background: var(--bg);
+		border-right: 1px solid var(--border);
+		padding: 0.5rem 0.3rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		min-width: 1.75rem;
+	}
+
+	.day-date-col.is-today {
+		background: var(--green);
+		color: white;
+		border-right-color: var(--green-dark);
+	}
+
+	.day-slots {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.slot-row {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.5rem;
+		padding: 0.35rem 0.65rem;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.slot-row:last-child {
+		border-bottom: none;
+	}
+
+	.slot-label {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		font-weight: 500;
+		width: 44px;
+		flex-shrink: 0;
+		padding-top: 0.15rem;
+	}
+
+	.slot-courses {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+	}
+
+	.cell-not-needed {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.1rem 0.25rem;
 	}
 
 	/* ── Confirm bar (sticky bottom) ── */
@@ -1086,229 +1410,195 @@
 
 	/* ── Desktop grid ── */
 	@media (min-width: 768px) {
-		.day-cards {
+		.slide-wrapper {
 			display: none;
 		}
 
 		.plan-grid {
-			display: block;
-			overflow-x: auto;
+			display: flex;
 			border: 1.5px solid var(--border-strong);
 			border-radius: var(--radius-lg);
 			box-shadow: var(--shadow);
-		}
-
-		table {
-			width: 100%;
-			border-collapse: collapse;
 			background: var(--surface);
-			border-radius: var(--radius-lg);
-			min-width: 700px;
+			overflow: hidden;
 		}
 
-		th,
-		td {
+		/* Fixed slot-label column */
+		.label-col {
+			width: 68px;
+			flex-shrink: 0;
+			display: flex;
+			flex-direction: column;
+			background: var(--bg);
+			border-right: 1px solid var(--border-strong);
+			z-index: 1;
+		}
+
+		.label-spacer {
+			height: 2.4rem;
 			border-bottom: 1px solid var(--border);
-			border-right: 1px solid var(--border);
-			padding: 0;
 		}
 
-		th:last-child,
-		td:last-child {
-			border-right: none;
+		.label-slot {
+			flex: 1;
+			display: flex;
+			align-items: center;
+			padding: 0 0.75rem;
+			font-size: 0.8rem;
+			font-weight: 500;
+			color: var(--text-muted);
+			border-bottom: 1px solid var(--border);
 		}
 
-		tbody tr:last-child td {
+		.label-slot:last-child {
 			border-bottom: none;
 		}
 
-		.th-slot {
-			width: 68px;
+		/* Animated days area */
+		.days-area {
+			flex: 1;
+			min-width: 0;
+			overflow: clip;
 		}
 
-		th {
+		.desktop-track {
+			display: flex;
+			/* 9 columns, each 1/7 of .days-area — track is 9/7 × container wide */
+			width: calc(9 * 100% / 7);
+			height: 100%;
+		}
+
+		.day-col {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			border-right: 1px solid var(--border);
+			min-width: 0;
+		}
+
+		.day-col:last-child {
+			border-right: none;
+		}
+
+		.day-col-header {
+			height: 2.4rem;
+			display: flex;
+			align-items: center;
+			padding: 0 0.75rem;
 			font-size: 0.75rem;
 			font-weight: 600;
 			text-transform: uppercase;
 			letter-spacing: 0.04em;
 			color: var(--text-muted);
 			background: var(--bg);
-			padding: 0.6rem 0.75rem;
-			text-align: left;
-		}
-
-		.td-label {
-			font-size: 0.8rem;
-			font-weight: 500;
-			color: var(--text-muted);
-			padding: 0 0.75rem;
-			background: var(--bg);
+			border-bottom: 1px solid var(--border);
 			white-space: nowrap;
+			overflow: hidden;
 		}
 
-		.td-cell {
-			vertical-align: top;
-			height: 72px;
-			transition: background 0.1s;
-		}
-
-		.td-cell.drag-over {
+		.day-col-header.today-col {
+			color: var(--green-dark);
 			background: var(--green-light);
 		}
 
-		.cell-filled {
-			display: flex;
-			align-items: flex-start;
-			gap: 0.25rem;
-			padding: 0.5rem 0.6rem;
-			height: 100%;
+		.day-slot-cell {
+			flex: 1;
+			padding: 0.35rem 0.4rem;
+			border-bottom: 1px solid var(--border);
+			overflow: hidden;
+			position: relative;
 		}
 
-		.cell-name-chip {
-			flex: 1;
-			display: flex;
-			align-items: center;
-			gap: 0.25rem;
+		.day-slot-cell:last-child {
+			border-bottom: none;
+		}
+
+		.day-slot-cell.today-col {
+			background: color-mix(in srgb, var(--green-light) 40%, var(--surface));
+		}
+
+		.day-slot-cell .course-row {
+			padding: 0.2rem 0.3rem;
+		}
+
+		.day-slot-cell .meal-chip {
+			font-size: 0.825rem;
 			background: var(--bg);
 			border: 1px solid var(--border-strong);
 			border-radius: var(--radius);
-			padding: 0.3rem 0.6rem;
-			font-size: 0.875rem;
-			line-height: 1.3;
-			cursor: grab;
+			padding: 0.25rem 0.5rem;
 			transition: opacity 0.15s, box-shadow 0.15s;
-			min-width: 0;
-		}
-
-		.cell-name-chip:hover {
-			box-shadow: 0 1px 4px rgba(42,37,32,0.1);
-		}
-
-		.cell-name-chip:active {
-			cursor: grabbing;
-		}
-
-		.cell-name-chip.is-dragging {
-			opacity: 0.35;
-		}
-
-		.cell-name-chip.not-needed {
-			color: var(--text-light);
-			font-style: italic;
-			border-style: dashed;
-		}
-
-		.cell-name-chip a {
-			color: var(--text);
-			text-decoration: none;
+			display: block;
 			overflow: hidden;
 			text-overflow: ellipsis;
 			white-space: nowrap;
 		}
 
-		.cell-name-chip a:hover {
-			color: var(--green);
-			text-decoration: underline;
+		.day-slot-cell .meal-chip:hover {
+			box-shadow: 0 1px 4px rgba(42, 37, 32, 0.1);
 		}
 
-		.btn-clear-cell {
-			background: none;
-			border: none;
-			color: var(--text-light);
-			cursor: pointer;
+		.day-slot-cell .meal-chip.is-dragging {
+			opacity: 0.35;
+		}
+
+		.day-slot-cell .meal-chip.not-needed {
+			border-style: dashed;
+		}
+
+		.day-slot-cell .meal-chip a {
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+			display: block;
+		}
+
+		.day-slot-cell .is-side .meal-chip {
+			font-size: 0.75rem;
+			background: transparent;
+			border-color: var(--border);
+		}
+
+		.day-slot-cell .btn-clear-entry {
 			font-size: 0.7rem;
 			padding: 0.15rem 0.3rem;
-			border-radius: 3px;
 			opacity: 0;
-			transition: opacity 0.15s, color 0.15s, background 0.15s;
-			flex-shrink: 0;
 		}
 
-		.td-cell:hover .btn-clear-cell {
+		.day-slot-cell .course-row:hover .btn-clear-entry {
 			opacity: 1;
 		}
 
-		.btn-clear-cell:hover {
-			color: var(--red);
-			background: #fdf0f0;
-		}
-
-		.btn-add-cell {
+		.day-slot-cell .btn-add-entry {
 			display: block;
 			width: 100%;
-			height: 100%;
-			background: none;
-			border: none;
-			color: var(--text-light);
-			font-size: 1.1rem;
-			cursor: pointer;
-			opacity: 0;
-			transition: opacity 0.15s, color 0.15s;
+			font-size: 0.75rem;
+			padding: 0.2rem 0.4rem;
+			text-align: left;
 		}
 
-		.td-cell:hover .btn-add-cell {
+		.day-slot-cell .btn-add-side {
+			font-size: 0.7rem;
+			opacity: 0.5;
+		}
+
+		.day-slot-cell:hover .btn-add-side {
 			opacity: 1;
 		}
 
-		.btn-add-cell:hover:not(:disabled) {
+		.day-slot-cell .btn-add-entry.is-editing {
+			border-color: var(--green);
 			color: var(--green);
 		}
 
-		.btn-add-cell:disabled {
-			cursor: default;
-		}
-
-		.cell-form {
-			padding: 0.5rem 0.6rem;
-			display: flex;
-			flex-direction: column;
-			gap: 0.35rem;
-		}
-
-		.cell-select,
-		.cell-input {
-			width: 100%;
-			padding: 0.35rem 0.5rem;
+		.day-slot-cell .entry-select,
+		.day-slot-cell .entry-input {
 			font-size: 0.8rem;
-			font-family: inherit;
-			border: 1.5px solid var(--border-strong);
-			border-radius: 4px;
-			background: var(--bg);
-			color: var(--text);
-			outline: none;
+			padding: 0.3rem 0.45rem;
 		}
 
-		.cell-select:focus,
-		.cell-input:focus {
-			border-color: var(--green);
-		}
-
-		.cell-form-actions {
-			display: flex;
-			gap: 0.3rem;
-		}
-
-		.btn-ok {
-			padding: 0.25rem 0.6rem;
-			font-size: 0.75rem;
-			font-family: inherit;
-			font-weight: 600;
-			background: var(--green);
-			color: white;
-			border: none;
-			border-radius: 4px;
-			cursor: pointer;
-		}
-
-		.btn-cancel-cell {
-			padding: 0.25rem 0.5rem;
-			font-size: 0.75rem;
-			font-family: inherit;
-			background: none;
-			border: 1px solid var(--border-strong);
-			border-radius: 4px;
-			color: var(--text-muted);
-			cursor: pointer;
+		.cell-not-needed {
+			padding: 0.35rem 0.4rem;
 		}
 
 		.confirm-bar {

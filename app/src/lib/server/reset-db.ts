@@ -10,5 +10,6 @@ if (!DATABASE_URL) throw new Error('DATABASE_URL is not set');
 const sql = postgres(DATABASE_URL);
 await sql`DROP SCHEMA public CASCADE`;
 await sql`CREATE SCHEMA public`;
+await sql`DROP SCHEMA IF EXISTS drizzle CASCADE`;
 console.log('Database reset.');
 await sql.end();

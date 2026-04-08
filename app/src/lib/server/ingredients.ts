@@ -12,7 +12,9 @@ const UNITS = new Set([
 const STOP_WORDS = new Set([
 	'die', 'der', 'das', 'ein', 'eine', 'einen', 'einem', 'einer',
 	'und', 'oder', 'mit', 'ohne', 'nach', 'aus', 'von', 'für',
-	'ca', 'etwa', 'nach', 'geschmack', 'belieben', 'bedarf'
+	'ca', 'etwa', 'nach', 'geschmack', 'belieben', 'bedarf',
+	// Quality/format descriptors that appear after the ingredient name
+	'klasse', 'ganz', 'ganze', 'ganzen', 'frisch', 'frische', 'frischen'
 ]);
 
 /**

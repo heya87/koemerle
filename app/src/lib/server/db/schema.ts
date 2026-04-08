@@ -18,6 +18,7 @@ export const recipes = pgTable('recipes', {
 	matchKeys: text('match_keys').array().notNull().default([]),
 	recipeUrl: text('recipe_url'),
 	servings: integer('servings'),
+	course: text('course'), // null = both, 'main' = Hauptgang only, 'side' = Beilage only
 	createdAt: timestamp('created_at').notNull().defaultNow()
 });
 
@@ -33,36 +34,34 @@ export const mealPlanEntries = pgTable(
 	'meal_plan_entries',
 	{
 		id: serial('id').primaryKey(),
-		weekStart: date('week_start').notNull(),
-		day: text('day').notNull(),
+		date: date('date').notNull(),
 		slot: text('slot').notNull(),
+		course: text('course').notNull().default('main'),
 		recipeId: integer('recipe_id').references(() => recipes.id),
 		freeText: text('free_text'),
 		updatedBy: text('updated_by').notNull(),
 		updatedAt: timestamp('updated_at').notNull().defaultNow()
 	},
-	(t) => [unique().on(t.weekStart, t.day, t.slot)]
+	(t) => [unique().on(t.date, t.slot, t.course)]
 );
 
-// One row per week — tracks planning state for that week
-export const weekMeta = pgTable('week_meta', {
-	weekStart: date('week_start').primaryKey(),
-	planningStartDay: text('planning_start_day'), // e.g. 'monday', null until planning is started
-	planningStartSlot: text('planning_start_slot') // e.g. 'lunch' or 'dinner', null until planning is started
+// One row — tracks the active planning period
+export const planMeta = pgTable('plan_meta', {
+	id: serial('id').primaryKey(),
+	planStart: date('plan_start').notNull(),
+	planEnd: date('plan_end').notNull(),
+	planningStartSlot: text('planning_start_slot')
 });
 
 export const activityLog = pgTable('activity_log', {
 	id: serial('id').primaryKey(),
-	weekStart: date('week_start').notNull(),
+	logDate: date('log_date').notNull(),
 	userId: text('user_id').notNull(),
 	message: text('message').notNull(),
 	createdAt: timestamp('created_at').notNull().defaultNow()
 });
 
 // Equivalence groups for ingredient matching.
-// All keys in a group are treated as the same ingredient.
-// First key is the canonical form — all others normalize to it.
-// e.g. matchKeys: ['rüebli', 'rüben', 'karotte']
 export const ingredientGroups = pgTable('ingredient_groups', {
 	id: serial('id').primaryKey(),
 	label: text('label').notNull(),
@@ -75,4 +74,3 @@ export const plantFoods = pgTable('plant_foods', {
 	matchKey: text('match_key').notNull().unique(),
 	label: text('label').notNull()
 });
-
