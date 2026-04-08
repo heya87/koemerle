@@ -37,6 +37,15 @@
 			<input type="url" name="recipeUrl" value={form?.recipeUrl ?? recipe.recipeUrl ?? ''} />
 		</label>
 
+		<label>
+			<span class="label-text">Gang</span>
+			<select name="course">
+				<option value="" selected={!(form?.course ?? recipe.course)}>Beide</option>
+				<option value="main" selected={(form?.course ?? recipe.course) === 'main'}>Hauptgang</option>
+				<option value="side" selected={(form?.course ?? recipe.course) === 'side'}>Beilage</option>
+			</select>
+		</label>
+
 		<p class="match-keys">Schlüssel: {recipe.matchKeys.join(', ')}</p>
 
 		{#if form?.message}
@@ -107,7 +116,8 @@
 	}
 
 	input,
-	textarea {
+	textarea,
+	select {
 		padding: 0.65rem 0.875rem;
 		font-size: 1rem;
 		font-family: inherit;
@@ -121,7 +131,8 @@
 	}
 
 	input:focus,
-	textarea:focus {
+	textarea:focus,
+	select:focus {
 		border-color: var(--green);
 		box-shadow: 0 0 0 3px rgba(77, 122, 88, 0.15);
 		background: var(--surface);

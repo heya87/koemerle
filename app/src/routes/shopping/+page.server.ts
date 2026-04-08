@@ -2,8 +2,8 @@ import { fail } from '@sveltejs/kit';
 import { createRequire } from 'node:module';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { recipes, basketItems, mealPlanEntries, ingredientGroups } from '$lib/server/db/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { recipes, basketItems, mealPlanEntries, planMeta, ingredientGroups } from '$lib/server/db/schema';
+import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { getWeekStart, buildAliasMap, createKeyNormalizer } from '$lib/server/ingredients';
 import { computeShoppingList } from '$lib/server/shopping';
 import { env } from '$env/dynamic/private';
@@ -14,11 +14,18 @@ const BringApi = createRequire(import.meta.url)('bring-shopping') as any;
 async function loadShoppingData() {
 	const weekStart = getWeekStart();
 
-	const [entries, basket, groups] = await Promise.all([
-		db.select().from(mealPlanEntries).where(eq(mealPlanEntries.weekStart, weekStart)),
+	const [metaRows, basket, groups] = await Promise.all([
+		db.select().from(planMeta).limit(1),
 		db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
 		db.select().from(ingredientGroups)
 	]);
+
+	const meta = metaRows[0] ?? null;
+	const entries = meta
+		? await db.select().from(mealPlanEntries).where(
+				and(gte(mealPlanEntries.date, meta.planStart), lte(mealPlanEntries.date, meta.planEnd))
+		  )
+		: [];
 
 	const recipeIds = entries.map((e) => e.recipeId).filter((id): id is number => id !== null);
 	const [plannedRecipes, allRecipes] = await Promise.all([
@@ -28,14 +35,15 @@ async function loadShoppingData() {
 
 	const normalize = createKeyNormalizer(buildAliasMap(groups));
 	const basketKeys = basket.map((b) => b.matchKey);
+	const recipeById = new Map(plannedRecipes.map((r) => [r.id, r]));
 	const shoppingList = computeShoppingList(
-		plannedRecipes.map((r) => r.ingredients),
+		recipeIds.map((id) => recipeById.get(id)?.ingredients ?? ''),
 		basketKeys,
 		allRecipes,
 		normalize
 	);
 
-	return { weekStart, shoppingList };
+	return { weekStart, shoppingList, planPeriod: meta ? { start: meta.planStart, end: meta.planEnd } : null };
 }
 
 export const load: PageServerLoad = async () => {

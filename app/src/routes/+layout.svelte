@@ -501,6 +501,7 @@
 		padding: 1.25rem 1rem;
 		max-width: var(--max-w);
 		margin: 0 auto;
+		overflow-x: clip;
 	}
 
 	main.with-tabs {

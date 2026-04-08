@@ -3,6 +3,17 @@
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	let toast = $state('');
+	let toastTimer: ReturnType<typeof setTimeout>;
+
+	$effect(() => {
+		if (form && 'synced' in form) {
+			clearTimeout(toastTimer);
+			toast = `${form.synced} Artikel synchronisiert`;
+			toastTimer = setTimeout(() => (toast = ''), 3000);
+		}
+	});
 </script>
 
 <div class="page-header">
@@ -23,7 +34,17 @@
 			{#each data.items as item}
 				<li>
 					<span class="display">{item.displayText}</span>
-					<span class="key">{item.matchKey}</span>
+					<form method="post" action="?/updateKey" use:enhance={() => async ({ update }) => update({ reset: false })} class="key-form">
+						<input type="hidden" name="id" value={item.id} />
+						<input
+							type="text"
+							name="matchKey"
+							value={item.matchKey}
+							class="key-input"
+							onblur={(e) => e.currentTarget.form?.requestSubmit()}
+							onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}
+						/>
+					</form>
 					<form method="post" action="?/remove" use:enhance>
 						<input type="hidden" name="id" value={item.id} />
 						<button type="submit" class="remove" title="Entfernen">✕</button>
@@ -42,6 +63,10 @@
 		<p class="error">{form.message}</p>
 	{/if}
 </div>
+
+{#if toast}
+	<div class="toast">{toast}</div>
+{/if}
 
 <style>
 	.page-header {
@@ -110,12 +135,30 @@
 		font-size: 0.975rem;
 	}
 
-	.key {
+	.key-form {
+		display: contents;
+	}
+
+	.key-input {
 		font-size: 0.775rem;
 		color: var(--text-light);
 		background: var(--bg);
 		padding: 0.15rem 0.45rem;
 		border-radius: 4px;
+		border: 1px solid transparent;
+		font-family: inherit;
+		width: 8rem;
+		outline: none;
+		transition: border-color 0.15s;
+	}
+
+	.key-input:hover {
+		border-color: var(--border-strong);
+	}
+
+	.key-input:focus {
+		border-color: var(--green);
+		color: var(--text);
 	}
 
 	.remove {
@@ -182,6 +225,20 @@
 
 	.error {
 		padding: 0 1rem 1rem;
+	}
+
+	.toast {
+		position: fixed;
+		bottom: 1.5rem;
+		left: 50%;
+		transform: translateX(-50%);
+		background: var(--text);
+		color: var(--bg);
+		padding: 0.6rem 1.25rem;
+		border-radius: var(--radius);
+		font-size: 0.9rem;
+		box-shadow: var(--shadow);
+		pointer-events: none;
 	}
 
 	/* Desktop */

@@ -23,14 +23,16 @@ export const actions: Actions = {
 		const recipeUrl = formData.get('recipeUrl')?.toString().trim() || null;
 		const servingsRaw = formData.get('servings')?.toString().trim();
 		const servings = servingsRaw ? Number(servingsRaw) : null;
+		const courseRaw = formData.get('course')?.toString().trim() || null;
+		const course = courseRaw === 'main' || courseRaw === 'side' ? courseRaw : null;
 
-		if (!name) return fail(400, { message: 'Name ist erforderlich.', name, ingredients, recipeUrl, servings });
-		if (!ingredients) return fail(400, { message: 'Zutaten sind erforderlich.', name, ingredients, recipeUrl, servings });
-		if (recipeUrl && !/^https?:\/\//i.test(recipeUrl)) return fail(400, { message: 'URL muss mit http:// oder https:// beginnen.', name, ingredients, recipeUrl, servings });
+		if (!name) return fail(400, { message: 'Name ist erforderlich.', name, ingredients, recipeUrl, servings, course });
+		if (!ingredients) return fail(400, { message: 'Zutaten sind erforderlich.', name, ingredients, recipeUrl, servings, course });
+		if (recipeUrl && !/^https?:\/\//i.test(recipeUrl)) return fail(400, { message: 'URL muss mit http:// oder https:// beginnen.', name, ingredients, recipeUrl, servings, course });
 
 		const matchKeys = generateMatchKeys(ingredients);
 
-		await db.update(recipes).set({ name, ingredients, matchKeys, recipeUrl, servings }).where(eq(recipes.id, id));
+		await db.update(recipes).set({ name, ingredients, matchKeys, recipeUrl, servings, course }).where(eq(recipes.id, id));
 		return redirect(303, '/recipes');
 	}
 };

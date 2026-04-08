@@ -48,6 +48,19 @@ Claude Code is the primary development tool. Keep code readable for someone with
 - Component files should do one thing
 - No unnecessary comments — code should be self-explanatory
 
+## Database Migrations
+
+Migrations are plain SQL files in `app/drizzle/`. No `db:generate` — files are written by hand.
+
+**Adding a migration:**
+1. Create `app/drizzle/NNNN_description.sql` with the SQL (e.g. `ALTER TABLE ...`)
+2. Append an entry to `app/drizzle/meta/_journal.json`:
+   ```json
+   { "idx": N, "version": "7", "when": 1234567890000, "tag": "NNNN_description", "breakpoints": true }
+   ```
+   `when` is a Unix timestamp in milliseconds (any value works, used for ordering display only).
+3. Run `npm run db:migrate` (prod) or `npm run db:clean` (local full reset).
+
 ## Open Decisions
 
 - Vegetable basket integration (biogmuesabo.ch) — re-check API when next delivery is active

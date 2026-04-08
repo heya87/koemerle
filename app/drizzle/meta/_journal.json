@@ -5,15 +5,22 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1774898585981,
-      "tag": "0000_flimsy_blazing_skull",
+      "when": 1775549539697,
+      "tag": "0000_boring_black_widow",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1775227570065,
-      "tag": "0001_seed_defaults",
+      "when": 1775549600000,
+      "tag": "0001_add_recipe_course",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775520000000,
+      "tag": "0002_date_based_planning",
       "breakpoints": true
     }
   ]

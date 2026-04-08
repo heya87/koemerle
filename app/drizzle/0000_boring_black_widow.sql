@@ -14,16 +14,30 @@ CREATE TABLE "basket_items" (
 	"permanent" boolean DEFAULT false NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "ingredient_groups" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"label" text NOT NULL,
+	"match_keys" text[] DEFAULT '{}' NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "meal_plan_entries" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"week_start" date NOT NULL,
 	"day" text NOT NULL,
 	"slot" text NOT NULL,
+	"course" text DEFAULT 'main' NOT NULL,
 	"recipe_id" integer,
 	"free_text" text,
 	"updated_by" text NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "meal_plan_entries_week_start_day_slot_unique" UNIQUE("week_start","day","slot")
+	CONSTRAINT "meal_plan_entries_week_start_day_slot_course_unique" UNIQUE("week_start","day","slot","course")
+);
+--> statement-breakpoint
+CREATE TABLE "plant_foods" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"match_key" text NOT NULL,
+	"label" text NOT NULL,
+	CONSTRAINT "plant_foods_match_key_unique" UNIQUE("match_key")
 );
 --> statement-breakpoint
 CREATE TABLE "recipes" (
