@@ -69,8 +69,18 @@ export const actions: Actions = {
 		if (!name) return fail(400, { message: 'Name fehlt' });
 		if (!ingredients) return fail(400, { message: 'Zutaten fehlen' });
 
+		function parseN(key: string): number | null {
+			const raw = formData.get(key)?.toString().trim();
+			const n = raw ? Number(raw) : NaN;
+			return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+		}
+		const kcal = parseN('kcal');
+		const fatG = parseN('fat_g');
+		const carbsG = parseN('carbs_g');
+		const proteinG = parseN('protein_g');
+
 		const matchKeys = generateMatchKeys(ingredients);
-		await db.insert(recipes).values({ name, ingredients, matchKeys, recipeUrl });
+		await db.insert(recipes).values({ name, ingredients, matchKeys, recipeUrl, kcal, fatG, carbsG, proteinG });
 		return redirect(303, '/recipes');
 	}
 };

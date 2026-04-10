@@ -17,13 +17,24 @@ export const actions: Actions = {
 		const courseRaw = formData.get('course')?.toString().trim() || null;
 		const course = courseRaw === 'main' || courseRaw === 'side' ? courseRaw : null;
 
-		if (!name) return fail(400, { message: 'Name ist erforderlich.', name, ingredients, recipeUrl, servings, course });
-		if (!ingredients) return fail(400, { message: 'Zutaten sind erforderlich.', name, ingredients, recipeUrl, servings, course });
-		if (recipeUrl && !/^https?:\/\//i.test(recipeUrl)) return fail(400, { message: 'URL muss mit http:// oder https:// beginnen.', name, ingredients, recipeUrl, servings, course });
+		function parseNutrient(key: string): number | null {
+			const raw = formData.get(key)?.toString().trim();
+			const n = raw ? Number(raw) : NaN;
+			return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+		}
+		const kcal = parseNutrient('kcal');
+		const fatG = parseNutrient('fat_g');
+		const carbsG = parseNutrient('carbs_g');
+		const proteinG = parseNutrient('protein_g');
+
+		const failData = { name, ingredients, recipeUrl, servings, course, kcal, fatG, carbsG, proteinG };
+		if (!name) return fail(400, { message: 'Name ist erforderlich.', ...failData });
+		if (!ingredients) return fail(400, { message: 'Zutaten sind erforderlich.', ...failData });
+		if (recipeUrl && !/^https?:\/\//i.test(recipeUrl)) return fail(400, { message: 'URL muss mit http:// oder https:// beginnen.', ...failData });
 
 		const matchKeys = generateMatchKeys(ingredients);
 
-		await db.insert(recipes).values({ name, ingredients, matchKeys, recipeUrl, servings, course });
+		await db.insert(recipes).values({ name, ingredients, matchKeys, recipeUrl, servings, course, kcal, fatG, carbsG, proteinG });
 		return redirect(303, '/recipes');
 	}
 };

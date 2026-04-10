@@ -14,6 +14,10 @@ export type FoobyRecipe = {
 	url: string;
 	imageUrl: string | null;
 	ingredients: string; // newline-separated display text, ready for the recipe form
+	kcal: number | null;
+	fatG: number | null;
+	carbsG: number | null;
+	proteinG: number | null;
 };
 
 /**
@@ -44,6 +48,12 @@ export async function searchFooby(query: string): Promise<FoobySearchResult[]> {
 	return results;
 }
 
+function parseNutrientStr(val: unknown): number | null {
+	if (typeof val !== 'string') return null;
+	const n = parseFloat(val.replace(/[^\d.]/g, ''));
+	return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+}
+
 /**
  * Fetches a fooby recipe page and extracts name + ingredients.
  */
@@ -62,9 +72,35 @@ export async function fetchFoobyRecipe(recipeUrl: string): Promise<FoobyRecipe> 
 	const nameMatch = html.match(/<meta property="og:title" content="([^"]+)"/);
 	const name = nameMatch ? nameMatch[1].trim() : '';
 
-	// Extract image from JSON-LD
-	const ldMatch = html.match(/"@type"\s*:\s*"Recipe"[\s\S]*?"image"\s*:\s*"([^"]+)"/);
-	const imageUrl = ldMatch ? ldMatch[1] : null;
+	// Extract Recipe JSON-LD block
+	let imageUrl: string | null = null;
+	let kcal: number | null = null;
+	let fatG: number | null = null;
+	let carbsG: number | null = null;
+	let proteinG: number | null = null;
+
+	const ldBlockMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g);
+	if (ldBlockMatch) {
+		for (const block of ldBlockMatch) {
+			const jsonStr = block.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
+			try {
+				const ld = JSON.parse(jsonStr);
+				if (ld['@type'] === 'Recipe') {
+					imageUrl = typeof ld.image === 'string' ? ld.image : null;
+					const n = ld.nutrition;
+					if (n) {
+						kcal = parseNutrientStr(n.calories);
+						fatG = parseNutrientStr(n.fatContent);
+						carbsG = parseNutrientStr(n.carbohydrateContent);
+						proteinG = parseNutrientStr(n.proteinContent);
+					}
+					break;
+				}
+			} catch {
+				// ignore malformed blocks
+			}
+		}
+	}
 
 	// Extract structured ingredient data from portion calculator attribute
 	const dataMatch = html.match(/data-portion-calculator-initial-all-ingredients="([^"]+)"/);
@@ -80,7 +116,7 @@ export async function fetchFoobyRecipe(recipeUrl: string): Promise<FoobyRecipe> 
 		return measure ? `${qty} ${measure} ${desc}` : `${qty} ${desc}`;
 	});
 
-	const recipe: FoobyRecipe = { name, url: recipeUrl, imageUrl, ingredients: lines.join('\n') };
+	const recipe: FoobyRecipe = { name, url: recipeUrl, imageUrl, ingredients: lines.join('\n'), kcal, fatG, carbsG, proteinG };
 	recipeCache.set(recipeUrl, { recipe, expiresAt: Date.now() + CACHE_TTL_MS });
 	return recipe;
 }
