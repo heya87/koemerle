@@ -30,6 +30,28 @@
 			<input type="number" name="servings" min="1" max="20" value={form?.servings ?? ''} style="max-width: 6rem" />
 		</label>
 
+		<fieldset class="nutrition-fieldset">
+			<legend class="label-text">Nährwerte <span class="hint">(pro Portion, optional)</span></legend>
+			<div class="nutrition-grid">
+				<label>
+					<span class="label-text">Kalorien (kcal)</span>
+					<input type="number" name="kcal" min="0" max="9999" value={form?.kcal ?? ''} />
+				</label>
+				<label>
+					<span class="label-text">Kohlenhydrate (g)</span>
+					<input type="number" name="carbs_g" min="0" max="999" value={form?.carbsG ?? ''} />
+				</label>
+				<label>
+					<span class="label-text">Fett (g)</span>
+					<input type="number" name="fat_g" min="0" max="999" value={form?.fatG ?? ''} />
+				</label>
+				<label>
+					<span class="label-text">Protein (g)</span>
+					<input type="number" name="protein_g" min="0" max="999" value={form?.proteinG ?? ''} />
+				</label>
+			</div>
+		</fieldset>
+
 		<label>
 			<span class="label-text">Rezept-Link</span>
 			<input type="url" name="recipeUrl" value={form?.recipeUrl ?? ''} />
@@ -136,6 +158,23 @@
 
 	textarea {
 		resize: vertical;
+	}
+
+	.nutrition-fieldset {
+		border: 1.5px solid var(--border);
+		border-radius: var(--radius);
+		padding: 0.75rem 1rem 1rem;
+	}
+
+	.nutrition-fieldset legend {
+		padding: 0 0.3rem;
+	}
+
+	.nutrition-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.75rem 1rem;
+		margin-top: 0.5rem;
 	}
 
 	.buttons {

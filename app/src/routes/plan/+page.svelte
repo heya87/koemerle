@@ -624,6 +624,62 @@
 			<div class="plant-fill" style="width: {pct * 100}%" class:plant-fill-full={full}></div>
 		</div>
 	</div>
+
+	{#if data.nutrientSummary.totalMealsWithRecipe > 0}
+		{@const ns = data.nutrientSummary}
+		<div class="nutrient-bar">
+			<div class="nutrient-bar-header">
+				<span class="nutrient-bar-label">Makronährstoffe</span>
+				<span class="nutrient-bar-detail">{ns.mealsWithData} / {ns.totalMealsWithRecipe} Mahlzeiten mit Daten</span>
+			</div>
+			{#if ns.hasData && ns.actualCarbsPct !== null}
+				{@const carbs = Math.round(ns.actualCarbsPct * 100)}
+				{@const fat   = Math.round((ns.actualFatPct ?? 0) * 100)}
+				{@const prot  = Math.round((ns.actualProteinPct ?? 0) * 100)}
+				<div class="macro-rows">
+					<div class="macro-row">
+						<span class="macro-name">Kohlenhydrate</span>
+						<div class="macro-bars">
+							<div class="macro-track">
+								<div class="macro-seg macro-carbs" style="width: {carbs}%"></div>
+							</div>
+							<div class="macro-track macro-track-ideal">
+								<div class="macro-seg macro-carbs" style="width: 50%"></div>
+							</div>
+						</div>
+						<span class="macro-pct">{carbs}% <span class="macro-ideal">/ 50%</span></span>
+					</div>
+					<div class="macro-row">
+						<span class="macro-name">Fett</span>
+						<div class="macro-bars">
+							<div class="macro-track">
+								<div class="macro-seg macro-fat" style="width: {fat}%"></div>
+							</div>
+							<div class="macro-track macro-track-ideal">
+								<div class="macro-seg macro-fat" style="width: 30%"></div>
+							</div>
+						</div>
+						<span class="macro-pct">{fat}% <span class="macro-ideal">/ 30%</span></span>
+					</div>
+					<div class="macro-row">
+						<span class="macro-name">Protein</span>
+						<div class="macro-bars">
+							<div class="macro-track">
+								<div class="macro-seg macro-protein" style="width: {prot}%"></div>
+							</div>
+							<div class="macro-track macro-track-ideal">
+								<div class="macro-seg macro-protein" style="width: 20%"></div>
+							</div>
+						</div>
+						<span class="macro-pct">{prot}% <span class="macro-ideal">/ 20%</span></span>
+					</div>
+				</div>
+				<p class="nutrient-kcal">{ns.totalKcal} kcal total (Plan)</p>
+			{:else}
+				<p class="nutrient-insufficient">Zu wenige Rezepte mit Nährwertdaten — bitte Rezepte ergänzen.</p>
+			{/if}
+		</div>
+	{/if}
 {/if}
 
 <!-- Confirm bar (sticky bottom, only in draft mode) -->
@@ -1406,6 +1462,110 @@
 
 	.plant-fill.plant-fill-full {
 		background: var(--green-dark);
+	}
+
+	/* ── Nutrient / macro bar ── */
+	.nutrient-bar {
+		margin-top: 0.75rem;
+		background: var(--surface);
+		border-radius: var(--radius);
+		box-shadow: var(--shadow);
+		padding: 0.875rem 1rem;
+	}
+
+	.nutrient-bar-header {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		margin-bottom: 0.75rem;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.nutrient-bar-label {
+		font-size: 0.8rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--text-muted);
+	}
+
+	.nutrient-bar-detail {
+		font-size: 0.75rem;
+		color: var(--text-light);
+	}
+
+	.macro-rows {
+		display: flex;
+		flex-direction: column;
+		gap: 0.55rem;
+	}
+
+	.macro-row {
+		display: grid;
+		grid-template-columns: 6rem 1fr 4rem;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.macro-name {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		white-space: nowrap;
+	}
+
+	.macro-bars {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.macro-track {
+		height: 8px;
+		border-radius: 4px;
+		background: var(--bg);
+		overflow: hidden;
+		border: 1px solid var(--border);
+	}
+
+	.macro-track-ideal {
+		opacity: 0.35;
+	}
+
+	.macro-seg {
+		height: 100%;
+		border-radius: 4px;
+		transition: width 0.4s ease;
+	}
+
+	.macro-carbs   { background: #6ea8d6; }
+	.macro-fat     { background: #e8a87c; }
+	.macro-protein { background: var(--green); }
+
+	.macro-pct {
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--text);
+		text-align: right;
+		white-space: nowrap;
+	}
+
+	.macro-ideal {
+		font-weight: 400;
+		color: var(--text-light);
+	}
+
+	.nutrient-kcal {
+		font-size: 0.78rem;
+		color: var(--text-light);
+		margin: 0.6rem 0 0;
+	}
+
+	.nutrient-insufficient {
+		font-size: 0.825rem;
+		color: var(--text-light);
+		font-style: italic;
+		margin: 0;
 	}
 
 	/* ── Desktop grid ── */

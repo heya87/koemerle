@@ -10,6 +10,10 @@
 	let previewIngredients = $state(form?.preview?.ingredients ?? '');
 	let previewUrl = $state(form?.preview?.url ?? '');
 	let previewImageUrl = $state(form?.preview?.imageUrl ?? null);
+	let previewKcal = $state(form?.preview?.kcal ?? null);
+	let previewFatG = $state(form?.preview?.fatG ?? null);
+	let previewCarbsG = $state(form?.preview?.carbsG ?? null);
+	let previewProteinG = $state(form?.preview?.proteinG ?? null);
 
 	$effect(() => {
 		if (form?.preview) {
@@ -17,6 +21,10 @@
 			previewIngredients = form.preview.ingredients;
 			previewUrl = form.preview.url;
 			previewImageUrl = form.preview.imageUrl ?? null;
+			previewKcal = form.preview.kcal ?? null;
+			previewFatG = form.preview.fatG ?? null;
+			previewCarbsG = form.preview.carbsG ?? null;
+			previewProteinG = form.preview.proteinG ?? null;
 		}
 	});
 </script>
@@ -98,6 +106,10 @@
 				</label>
 
 				<input type="hidden" name="recipeUrl" value={previewUrl} />
+				{#if previewKcal !== null}<input type="hidden" name="kcal" value={previewKcal} />{/if}
+				{#if previewFatG !== null}<input type="hidden" name="fat_g" value={previewFatG} />{/if}
+				{#if previewCarbsG !== null}<input type="hidden" name="carbs_g" value={previewCarbsG} />{/if}
+				{#if previewProteinG !== null}<input type="hidden" name="protein_g" value={previewProteinG} />{/if}
 
 				{#if form?.message && form?.preview}
 					<p class="error">{form.message}</p>

@@ -59,6 +59,29 @@ export const load: PageServerLoad = async () => {
 		}
 	}
 
+	// Nutrient aggregation — sum across all plan entries that have a recipe with data
+	let totalKcal = 0, totalFatG = 0, totalCarbsG = 0, totalProteinG = 0;
+	let mealsWithData = 0, totalMealsWithRecipe = 0;
+
+	for (const entry of planEntries) {
+		if (!entry.recipeId) continue;
+		const recipe = allRecipes.find((r) => r.id === entry.recipeId);
+		if (!recipe) continue;
+		totalMealsWithRecipe++;
+		if (recipe.kcal == null) continue;
+		mealsWithData++;
+		totalKcal += recipe.kcal;
+		totalFatG += recipe.fatG ?? 0;
+		totalCarbsG += recipe.carbsG ?? 0;
+		totalProteinG += recipe.proteinG ?? 0;
+	}
+
+	const hasData = totalMealsWithRecipe > 0 && mealsWithData / totalMealsWithRecipe >= 0.5;
+	const fatKcal = totalFatG * 9;
+	const carbsKcal = totalCarbsG * 4;
+	const proteinKcal = totalProteinG * 4;
+	const macroTotal = fatKcal + carbsKcal + proteinKcal;
+
 	return {
 		today,
 		allRecipes,
@@ -66,7 +89,16 @@ export const load: PageServerLoad = async () => {
 		entries,
 		meta,
 		plantCount: foundPlants.size,
-		plantGoal: 30
+		plantGoal: 30,
+		nutrientSummary: {
+			hasData,
+			mealsWithData,
+			totalMealsWithRecipe,
+			totalKcal,
+			actualCarbsPct: hasData && macroTotal > 0 ? carbsKcal / macroTotal : null,
+			actualFatPct:   hasData && macroTotal > 0 ? fatKcal   / macroTotal : null,
+			actualProteinPct: hasData && macroTotal > 0 ? proteinKcal / macroTotal : null
+		}
 	};
 };
 

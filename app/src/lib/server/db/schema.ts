@@ -19,6 +19,10 @@ export const recipes = pgTable('recipes', {
 	recipeUrl: text('recipe_url'),
 	servings: integer('servings'),
 	course: text('course'), // null = both, 'main' = Hauptgang only, 'side' = Beilage only
+	kcal: integer('kcal'),
+	fatG: integer('fat_g'),
+	carbsG: integer('carbs_g'),
+	proteinG: integer('protein_g'),
 	createdAt: timestamp('created_at').notNull().defaultNow()
 });
 
