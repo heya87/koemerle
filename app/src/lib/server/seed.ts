@@ -1,12 +1,14 @@
 /**
- * Creates the two app users. Run once during setup.
+ * Creates the two app users if they don't exist yet. Safe to re-run.
  * Usage: npx tsx src/lib/server/seed.ts
  */
 import { betterAuth } from 'better-auth/minimal';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { eq } from 'drizzle-orm';
 import postgres from 'postgres';
 import * as schema from './db/schema';
+import { user as userTable } from './db/auth.schema';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error('DATABASE_URL is not set');
@@ -30,12 +32,13 @@ if (users.length === 0) {
 }
 
 for (const user of users) {
-	const result = await auth.api.signUpEmail({ body: user });
-	if (result.user) {
-		console.log(`Created user: ${user.email}`);
-	} else {
+	const existing = await db.select().from(userTable).where(eq(userTable.email, user.email)).limit(1);
+	if (existing.length > 0) {
 		console.log(`User already exists, skipping: ${user.email}`);
+		continue;
 	}
+	await auth.api.signUpEmail({ body: user });
+	console.log(`Created user: ${user.email}`);
 }
 
 await client.end();
