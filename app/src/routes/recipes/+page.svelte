@@ -22,9 +22,7 @@
 			<li class="recipe-card">
 				<div class="card-main">
 					<span class="card-name">{recipe.name}</span>
-					{#if recipe.course}
-						<span class="card-course">{recipe.course === 'main' ? 'Hauptgang' : 'Beilage'}</span>
-					{/if}
+					<span class="card-course">{recipe.course === 'main' ? 'Hauptgang' : recipe.course === 'side' ? 'Beilage' : 'Beide'}</span>
 					{#if recipe.servings}
 						<span class="card-servings">{recipe.servings} P.</span>
 					{/if}
@@ -67,7 +65,7 @@
 			{#each data.recipes as recipe}
 				<tr>
 					<td class="col-name">{recipe.name}</td>
-					<td class="col-course">{recipe.course === 'main' ? 'Hauptgang' : recipe.course === 'side' ? 'Beilage' : '—'}</td>
+					<td class="col-course">{recipe.course === 'main' ? 'Hauptgang' : recipe.course === 'side' ? 'Beilage' : 'Beide'}</td>
 					<td class="col-servings">{recipe.servings ?? '—'}</td>
 					<td class="col-keys">{recipe.matchKeys.join(', ')}</td>
 					<td class="col-link">

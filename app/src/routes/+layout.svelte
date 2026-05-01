@@ -8,9 +8,11 @@
 	let { children, data }: { children: any; data: LayoutData } = $props();
 
 	let settingsDialog: HTMLDialogElement | undefined = $state();
-	let activeTab: 'groups' | 'plants' = $state('groups');
+	let activeTab: 'groups' | 'plants' | 'recipes' = $state('groups');
 	let newGroupLabel = $state('');
 	let newGroupKeys = $state('');
+	let importResult: { imported: number; skipped: number } | null = $state(null);
+	let selectedFileName = $state('');
 
 	function openSettings() {
 		newGroupLabel = '';
@@ -65,6 +67,12 @@
 					class:active={activeTab === 'plants'}
 					onclick={() => (activeTab = 'plants')}
 				>Pflanzliche Zutaten</button>
+				<button
+					type="button"
+					class="settings-tab"
+					class:active={activeTab === 'recipes'}
+					onclick={() => { activeTab = 'recipes'; importResult = null; }}
+				>Rezepte</button>
 			</nav>
 
 			{#if activeTab === 'groups'}
@@ -191,6 +199,66 @@
 						<input type="text" name="matchKey" placeholder="Schlüssel (z.B. karotte)" required />
 						<button type="submit" class="btn-add-synonym">Hinzufügen</button>
 					</form>
+				</div>
+			{/if}
+
+			{#if activeTab === 'recipes'}
+				<div class="settings-section">
+					<div class="settings-info-box">
+						Rezepte als JSON exportieren oder aus einer zuvor exportierten Datei importieren.
+						Beim Import werden Rezepte mit gleichem Namen übersprungen.
+					</div>
+
+					<div class="backup-actions">
+						<div class="backup-row">
+							<span class="backup-label">Export</span>
+							<span class="backup-spacer"></span>
+							<a href="/recipes/export" download class="btn-backup btn-backup-primary">JSON exportieren</a>
+						</div>
+
+						<div class="backup-row">
+							<span class="backup-label">Import</span>
+							<form
+								method="post"
+								action="/settings?/importRecipes"
+								enctype="multipart/form-data"
+								class="import-form"
+								use:enhance={({ formElement }) => async ({ result }) => {
+									if (result.type === 'success' && result.data) {
+										importResult = result.data as { imported: number; skipped: number };
+										formElement.reset();
+										selectedFileName = '';
+									}
+								}}
+							>
+								<label class="file-input-label">
+									<input
+										type="file"
+										name="file"
+										accept=".json"
+										required
+										onchange={(e) => {
+											const f = (e.target as HTMLInputElement).files?.[0];
+											selectedFileName = f ? f.name : '';
+										}}
+									/>
+									<span class="file-btn">Durchsuchen</span>
+									{#if selectedFileName}
+										<span class="file-name">{selectedFileName}</span>
+									{:else}
+										<span class="file-name file-name-empty">Keine Datei gewählt</span>
+									{/if}
+								</label>
+								<button type="submit" class="btn-backup btn-backup-primary">Importieren</button>
+							</form>
+						</div>
+
+						{#if importResult}
+							<p class="import-result">
+								{importResult.imported} importiert, {importResult.skipped} übersprungen.
+							</p>
+						{/if}
+					</div>
 				</div>
 			{/if}
 		</div>
@@ -465,6 +533,137 @@
 
 	.btn-add-synonym:hover {
 		background: var(--green-dark);
+	}
+
+	.backup-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 0;
+	}
+
+	.backup-row {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		padding: 0.75rem 0;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.backup-row:last-of-type {
+		border-bottom: none;
+	}
+
+	.backup-label {
+		font-size: 0.8rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--text-muted);
+		width: 4.5rem;
+		flex-shrink: 0;
+	}
+
+	.backup-spacer {
+		flex: 1;
+	}
+
+	.btn-backup {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 9rem;
+		height: 2rem;
+		padding: 0 1rem;
+		box-sizing: border-box;
+		font-size: 0.875rem;
+		font-weight: 500;
+		font-family: inherit;
+		text-decoration: none;
+		background: var(--surface);
+		color: var(--text);
+		border: 1.5px solid var(--border-strong);
+		border-radius: var(--radius);
+		cursor: pointer;
+		transition: background 0.15s;
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.btn-backup:hover {
+		background: var(--bg);
+	}
+
+	.btn-backup-primary {
+		background: var(--green);
+		color: white;
+		border-color: var(--green);
+	}
+
+	.btn-backup-primary:hover {
+		background: var(--green-dark);
+		border-color: var(--green-dark);
+	}
+
+	.import-form {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex: 1;
+	}
+
+	.file-input-label {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.6rem;
+		cursor: pointer;
+		flex: 1;
+	}
+
+	.file-input-label input[type='file'] {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		opacity: 0;
+		pointer-events: none;
+	}
+
+	.file-btn {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.45rem 1rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		font-family: inherit;
+		background: var(--surface);
+		color: var(--text-muted);
+		border: 1.5px solid var(--border-strong);
+		border-radius: var(--radius);
+		white-space: nowrap;
+		transition: color 0.15s, background 0.15s;
+	}
+
+	.file-input-label:hover .file-btn {
+		color: var(--text);
+		background: var(--bg);
+	}
+
+	.file-name {
+		font-size: 0.875rem;
+		color: var(--text);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 12rem;
+	}
+
+	.file-name-empty {
+		color: var(--text-muted);
+	}
+
+	.import-result {
+		margin-top: 0.75rem;
+		font-size: 0.875rem;
+		color: var(--green);
 	}
 
 	/* ── Bottom tab bar (mobile) ── */
