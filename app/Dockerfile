@@ -4,8 +4,6 @@ COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
-# Generate migration SQL so the runner doesn't need drizzle-kit or TypeScript
-RUN npx drizzle-kit generate
 
 FROM node:20-alpine AS runner
 WORKDIR /app
