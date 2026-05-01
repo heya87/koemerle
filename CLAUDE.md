@@ -61,6 +61,9 @@ Migrations are plain SQL files in `app/drizzle/`. No `db:generate` — files are
    `when` is a Unix timestamp in milliseconds (any value works, used for ordering display only).
 3. Run `npm run db:migrate` (prod) or `npm run db:clean` (local full reset).
 
+**Critical rule — never edit a migration file that has been applied to prod.**
+Once a migration runs on prod, it is permanent. If you made a mistake, create a new migration to fix it. Editing an existing migration file after it has been deployed will cause the migration chain to diverge between environments and break future deploys. If unsure whether a migration has been applied to prod, check the `drizzle.__drizzle_migrations` table on the prod DB.
+
 ## Open Decisions
 
 - Vegetable basket integration (biogmuesabo.ch) — re-check API when next delivery is active

@@ -17,4 +17,4 @@ COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=builder /app/src ./src
 EXPOSE 3000
-CMD ["sh", "-c", "npx drizzle-kit migrate && npx tsx src/lib/server/seed.ts && npx tsx src/lib/server/seed-defaults.ts && node build"]
+CMD ["sh", "-c", "npx tsx src/lib/server/migrate.ts && npx tsx src/lib/server/seed.ts && npx tsx src/lib/server/seed-defaults.ts && node build"]
