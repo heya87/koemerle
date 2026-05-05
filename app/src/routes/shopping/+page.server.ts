@@ -2,7 +2,7 @@ import { fail } from '@sveltejs/kit';
 import { createRequire } from 'node:module';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { recipes, basketItems, mealPlanEntries, planMeta, ingredientGroups } from '$lib/server/db/schema';
+import { recipes, basketItems, fridgeItems, mealPlanEntries, planMeta, ingredientGroups } from '$lib/server/db/schema';
 import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { getWeekStart, buildAliasMap, createKeyNormalizer } from '$lib/server/ingredients';
 import { computeShoppingList } from '$lib/server/shopping';
@@ -14,9 +14,10 @@ const BringApi = createRequire(import.meta.url)('bring-shopping') as any;
 async function loadShoppingData() {
 	const weekStart = getWeekStart();
 
-	const [metaRows, basket, groups] = await Promise.all([
+	const [metaRows, basket, fridge, groups] = await Promise.all([
 		db.select().from(planMeta).limit(1),
 		db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
+		db.select().from(fridgeItems),
 		db.select().from(ingredientGroups)
 	]);
 
@@ -34,11 +35,14 @@ async function loadShoppingData() {
 	]);
 
 	const normalize = createKeyNormalizer(buildAliasMap(groups));
-	const basketKeys = basket.map((b) => b.matchKey);
+	const availableKeys = [
+		...basket.map((b) => b.matchKey),
+		...fridge.map((f) => f.matchKey)
+	];
 	const recipeById = new Map(plannedRecipes.map((r) => [r.id, r]));
 	const shoppingList = computeShoppingList(
 		recipeIds.map((id) => recipeById.get(id)?.ingredients ?? ''),
-		basketKeys,
+		availableKeys,
 		allRecipes,
 		normalize
 	);
@@ -74,16 +78,19 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const assignmentsJson = formData.get('assignments') as string | null;
 		const assignments: Record<string, string> = assignmentsJson ? JSON.parse(assignmentsJson) : {};
+		const removedJson = formData.get('removed') as string | null;
+		const removedKeys = new Set<string>(removedJson ? JSON.parse(removedJson) : []);
 
 		const { shoppingList } = await loadShoppingData();
+		const filteredList = shoppingList.filter((item) => !removedKeys.has(item.matchKey));
 
-		if (shoppingList.length === 0) {
+		if (filteredList.length === 0) {
 			return { sent: 0 };
 		}
 
 		// Group items by target list
 		const byList: Record<string, string[]> = {};
-		for (const item of shoppingList) {
+		for (const item of filteredList) {
 			const listId = assignments[item.displayText] ?? BRING_LIST_ID;
 			if (!byList[listId]) byList[listId] = [];
 			byList[listId].push(item.displayText);

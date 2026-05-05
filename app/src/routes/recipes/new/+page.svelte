@@ -53,6 +53,11 @@
 		</fieldset>
 
 		<label>
+			<span class="label-text">Zubereitung</span>
+			<textarea name="preparation" rows="4" placeholder="Zubereitung (optional)">{form?.preparation ?? ''}</textarea>
+		</label>
+
+		<label>
 			<span class="label-text">Rezept-Link</span>
 			<input type="url" name="recipeUrl" value={form?.recipeUrl ?? ''} />
 		</label>

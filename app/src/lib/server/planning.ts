@@ -63,34 +63,37 @@ export function generateSlots(startDate: string, endDate: string, startSlot: Slo
  * - Recipes in `usedIds` are excluded from both passes.
  * - Slots in `occupiedKeys` ("date-slot-course") are skipped.
  * - Slots in `notNeededSlotKeys` ("date-slot") get course='main', notNeeded=true; side is skipped.
+ * - basketItems with deliveryDate are only available for slots on/after that date.
+ * - fridgeItems are always available but do not drive the coverage-first scoring.
  */
 export function suggestPlan(params: {
 	allRecipes: PlanRecipe[];
-	basketKeys: Set<string>;
+	basketItems: { matchKey: string; deliveryDate: string | null }[];
+	fridgeItems: { matchKey: string }[];
 	usedIds: Set<number>;
 	occupiedKeys: Set<string>;
 	notNeededSlotKeys: Set<string>;
 	slots: [string, Slot][]; // [date, slot]
 	normalize: KeyNormalizer;
 }): PlanEntry[] {
-	const { allRecipes, basketKeys, usedIds, occupiedKeys, notNeededSlotKeys, slots, normalize } = params;
+	const { allRecipes, basketItems, fridgeItems, usedIds, occupiedKeys, notNeededSlotKeys, slots, normalize } = params;
+
+	const fridgeKeys = new Set(fridgeItems.map((i) => normalize(i.matchKey)));
+	const allBasketKeys = new Set(basketItems.map((i) => normalize(i.matchKey)));
+
+	function getSlotBasketKeys(slotDate: string): Set<string> {
+		return new Set(
+			basketItems
+				.filter((i) => i.deliveryDate === null || i.deliveryDate <= slotDate)
+				.map((i) => normalize(i.matchKey))
+		);
+	}
 
 	const result: PlanEntry[] = [];
 	const coveredKeys = new Set<string>();
 
-	function score(r: PlanRecipe) {
-		return r.matchKeys.filter((k) => basketKeys.has(normalize(k))).length;
-	}
-
-	function filterAndScore(eligible: PlanRecipe[]) {
-		return eligible
-			.map((r) => ({ ...r, score: score(r) }))
-			.filter((r) => r.score > 0 && !usedIds.has(r.id));
-	}
-
 	// ── Pass 1: main courses ──
 	const mainEligible = allRecipes.filter((r) => r.course === null || r.course === 'main');
-	let mainAvailable = filterAndScore(mainEligible);
 
 	for (const [date, slot] of slots) {
 		const slotKey = `${date}-${slot}`;
@@ -102,45 +105,59 @@ export function suggestPlan(params: {
 
 		if (occupiedKeys.has(`${slotKey}-main`)) continue;
 
-		mainAvailable.sort((a, b) => {
-			const newA = a.matchKeys.filter((k) => basketKeys.has(normalize(k)) && !coveredKeys.has(normalize(k))).length;
-			const newB = b.matchKeys.filter((k) => basketKeys.has(normalize(k)) && !coveredKeys.has(normalize(k))).length;
-			return newB - newA || b.score - a.score || a.name.localeCompare(b.name);
-		});
+		const slotBasketKeys = getSlotBasketKeys(date);
 
-		const recipe = mainAvailable.shift();
+		const available = mainEligible
+			.filter((r) => !usedIds.has(r.id))
+			.filter((r) => r.matchKeys.some((k) => slotBasketKeys.has(normalize(k)) || fridgeKeys.has(normalize(k))))
+			.map((r) => ({
+				...r,
+				fridgeScore: r.matchKeys.filter((k) => fridgeKeys.has(normalize(k))).length,
+				newCoverage: r.matchKeys.filter((k) => slotBasketKeys.has(normalize(k)) && !coveredKeys.has(normalize(k))).length,
+				score: r.matchKeys.filter((k) => slotBasketKeys.has(normalize(k))).length
+			}))
+			.sort((a, b) => b.fridgeScore - a.fridgeScore || b.newCoverage - a.newCoverage || b.score - a.score || a.name.localeCompare(b.name));
+
+		const recipe = available[0];
 		if (!recipe) continue;
 
 		usedIds.add(recipe.id);
 		for (const k of recipe.matchKeys) {
-			if (basketKeys.has(normalize(k))) coveredKeys.add(normalize(k));
+			if (allBasketKeys.has(normalize(k))) coveredKeys.add(normalize(k));
 		}
 		result.push({ date, slot, course: 'main', recipeId: recipe.id, notNeeded: false });
 	}
 
 	// ── Pass 2: side courses ──
-	const uncoveredKeys = new Set([...basketKeys].filter((k) => !coveredKeys.has(k)));
+	const uncoveredKeys = new Set([...allBasketKeys].filter((k) => !coveredKeys.has(k)));
 	if (uncoveredKeys.size === 0) return result;
 
 	const sideEligible = allRecipes.filter((r) => r.course === null || r.course === 'side');
-	let sideAvailable = filterAndScore(sideEligible).filter((r) =>
-		r.matchKeys.some((k) => uncoveredKeys.has(normalize(k)))
-	);
 
 	for (const [date, slot] of slots) {
-		if (sideAvailable.length === 0) break;
+		if (sideEligible.filter((r) => !usedIds.has(r.id)).length === 0) break;
 
 		const slotKey = `${date}-${slot}`;
 		if (notNeededSlotKeys.has(slotKey)) continue;
 		if (occupiedKeys.has(`${slotKey}-side`)) continue;
 
-		sideAvailable.sort((a, b) => {
-			const newA = a.matchKeys.filter((k) => uncoveredKeys.has(normalize(k))).length;
-			const newB = b.matchKeys.filter((k) => uncoveredKeys.has(normalize(k))).length;
-			return newB - newA || b.score - a.score || a.name.localeCompare(b.name);
-		});
+		const slotBasketKeys = getSlotBasketKeys(date);
+		const slotUncoveredKeys = new Set([...slotBasketKeys].filter((k) => uncoveredKeys.has(k)));
 
-		const recipe = sideAvailable.shift();
+		const available = sideEligible
+			.filter((r) => !usedIds.has(r.id))
+			.filter((r) =>
+				r.matchKeys.some((k) => slotUncoveredKeys.has(normalize(k)) || fridgeKeys.has(normalize(k)))
+			)
+			.map((r) => ({
+				...r,
+				fridgeScore: r.matchKeys.filter((k) => fridgeKeys.has(normalize(k))).length,
+				newCoverage: r.matchKeys.filter((k) => slotUncoveredKeys.has(normalize(k))).length,
+				score: r.matchKeys.filter((k) => slotBasketKeys.has(normalize(k))).length
+			}))
+			.sort((a, b) => b.fridgeScore - a.fridgeScore || b.newCoverage - a.newCoverage || b.score - a.score || a.name.localeCompare(b.name));
+
+		const recipe = available[0];
 		if (!recipe) continue;
 
 		usedIds.add(recipe.id);

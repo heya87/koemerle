@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { recipes, basketItems, mealPlanEntries, planMeta, activityLog, ingredientGroups, plantFoods } from '$lib/server/db/schema';
+import { recipes, basketItems, fridgeItems, mealPlanEntries, planMeta, activityLog, ingredientGroups, plantFoods } from '$lib/server/db/schema';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { getWeekStart, createKeyNormalizer, buildAliasMap } from '$lib/server/ingredients';
 import { suggestPlan, generateSlots } from '$lib/server/planning';
@@ -121,15 +121,15 @@ export const actions: Actions = {
 		}
 
 		const weekStart = getWeekStart();
-		const [basket, allRecipes, existing, groups] = await Promise.all([
+		const [basket, fridge, allRecipes, existing, groups] = await Promise.all([
 			db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
+			db.select().from(fridgeItems),
 			db.select().from(recipes),
 			db.select().from(mealPlanEntries),
 			db.select().from(ingredientGroups)
 		]);
 
 		const normalize = createKeyNormalizer(buildAliasMap(groups));
-		const basketKeys = new Set(basket.map((b) => normalize(b.matchKey)));
 		const notNeededKeys = new Set(fd.getAll('notNeeded').map((v) => v.toString()));
 		const allSlots = generateSlots(startDate, endDate, startSlot);
 		const allSlotKeys = new Set(allSlots.map(([d, s]) => `${d}-${s}`));
@@ -142,7 +142,8 @@ export const actions: Actions = {
 
 		const planned = suggestPlan({
 			allRecipes,
-			basketKeys,
+			basketItems: basket.map((b) => ({ matchKey: b.matchKey, deliveryDate: b.deliveryDate })),
+			fridgeItems: fridge,
 			usedIds,
 			occupiedKeys: new Set(),
 			notNeededSlotKeys: notNeededKeys,
@@ -175,15 +176,15 @@ export const actions: Actions = {
 		}
 
 		const weekStart = getWeekStart();
-		const [basket, allRecipes, existing, groups] = await Promise.all([
+		const [basket, fridge, allRecipes, existing, groups] = await Promise.all([
 			db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
+			db.select().from(fridgeItems),
 			db.select().from(recipes),
 			db.select().from(mealPlanEntries),
 			db.select().from(ingredientGroups)
 		]);
 
 		const normalize = createKeyNormalizer(buildAliasMap(groups));
-		const basketKeys = new Set(basket.map((b) => normalize(b.matchKey)));
 		const notNeededKeys = new Set(fd.getAll('notNeeded').map((v) => v.toString()));
 		const allSlots = generateSlots(startDate, endDate, startSlot);
 		const allSlotKeys = new Set(allSlots.map(([d, s]) => `${d}-${s}`));
@@ -195,7 +196,8 @@ export const actions: Actions = {
 
 		const newEntries = suggestPlan({
 			allRecipes,
-			basketKeys,
+			basketItems: basket.map((b) => ({ matchKey: b.matchKey, deliveryDate: b.deliveryDate })),
+			fridgeItems: fridge,
 			usedIds,
 			occupiedKeys: new Set(),
 			notNeededSlotKeys: notNeededKeys,

@@ -45,7 +45,7 @@ async function login(): Promise<string> {
 	return cachedToken;
 }
 
-export async function fetchCurrentBasket(): Promise<BasketItem[]> {
+export async function fetchCurrentBasket(): Promise<{ items: BasketItem[]; deliveryDate: string | null }> {
 	const token = await login();
 
 	const res = await fetch('https://biogmuesabo.ch/ACM/api/webshop/getcurrentdeliveries', {
@@ -55,7 +55,17 @@ export async function fetchCurrentBasket(): Promise<BasketItem[]> {
 
 	const deliveries = (await res.json()) as any[];
 	const next = deliveries[0];
-	if (!next) return [];
+	if (!next) return { items: [], deliveryDate: null };
+
+	// Extract delivery date — try common field names
+	const rawDate = next.date ?? next.deliveryDate ?? next.deliveryDay ?? null;
+	let deliveryDate: string | null = null;
+	if (rawDate) {
+		const parsed = new Date(rawDate);
+		if (!isNaN(parsed.getTime())) {
+			deliveryDate = parsed.toISOString().split('T')[0];
+		}
+	}
 
 	const items: BasketItem[] = [];
 
@@ -88,5 +98,5 @@ export async function fetchCurrentBasket(): Promise<BasketItem[]> {
 		}
 	}
 
-	return items;
+	return { items, deliveryDate };
 }

@@ -14,21 +14,27 @@
 			toastTimer = setTimeout(() => (toast = ''), 3000);
 		}
 	});
+
 </script>
 
 <div class="page-header">
 	<h1>Gemüsekorb</h1>
-	<span class="week-label">Woche ab {data.weekStart}</span>
-	{#if data.bioaboConfigured}
-		<form method="post" action="?/sync" use:enhance class="sync-form">
-			<button type="submit" class="btn-sync">↻ Von Biogmüsabo</button>
-		</form>
+	{#if data.deliveryDate}
+		<span class="week-label">Lieferung {data.deliveryDate}</span>
+	{:else}
+		<span class="week-label">Woche ab {data.weekStart}</span>
 	{/if}
+	<form method="post" action="?/sync" use:enhance class="sync-form">
+		<button type="submit" class="btn-sync" disabled={!data.bioaboConfigured}>↻ Von Biogmüsabo</button>
+		{#if !data.bioaboConfigured}
+			<span class="sync-hint">BIOABO_EMAIL / BIOABO_PASSWORD fehlen in den Umgebungsvariablen</span>
+		{/if}
+	</form>
 </div>
 
 <div class="basket-card">
 	{#if data.items.length === 0}
-		<p class="empty">Noch keine Zutaten im Gemüsekorb.</p>
+		<p class="empty">Noch keine Lieferung importiert.</p>
 	{:else}
 		<ul class="item-list">
 			{#each data.items as item}
@@ -53,11 +59,6 @@
 			{/each}
 		</ul>
 	{/if}
-
-	<form method="post" action="?/add" use:enhance class="add-form">
-		<input type="text" name="displayText" placeholder="z.B. 3 Karotten" required autofocus />
-		<button type="submit" class="btn-add">Hinzufügen</button>
-	</form>
 
 	{#if form?.message}
 		<p class="error">{form.message}</p>
@@ -84,6 +85,9 @@
 
 	.sync-form {
 		margin-left: auto;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
 	}
 
 	.btn-sync {
@@ -100,8 +104,19 @@
 		transition: color 0.15s;
 	}
 
-	.btn-sync:hover {
+	.btn-sync:hover:not(:disabled) {
 		color: var(--text);
+	}
+
+	.btn-sync:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.sync-hint {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		margin-top: 0.25rem;
 	}
 
 	.basket-card {
@@ -116,6 +131,7 @@
 		padding: 1.25rem;
 		margin: 0;
 	}
+
 
 	.item-list {
 		list-style: none;
@@ -178,49 +194,6 @@
 	.remove:hover {
 		color: var(--red);
 		background: #fdf0f0;
-	}
-
-	.add-form {
-		display: flex;
-		gap: 0.5rem;
-		padding: 0.875rem 1rem;
-	}
-
-	.add-form input {
-		flex: 1;
-		padding: 0.6rem 0.875rem;
-		font-size: 0.975rem;
-		font-family: inherit;
-		border: 1.5px solid var(--border-strong);
-		border-radius: var(--radius);
-		background: var(--bg);
-		color: var(--text);
-		outline: none;
-		transition: border-color 0.15s, box-shadow 0.15s;
-	}
-
-	.add-form input:focus {
-		border-color: var(--green);
-		box-shadow: 0 0 0 3px rgba(77, 122, 88, 0.15);
-		background: var(--surface);
-	}
-
-	.btn-add {
-		padding: 0.6rem 1.1rem;
-		font-size: 0.9rem;
-		font-family: inherit;
-		font-weight: 500;
-		background: var(--green);
-		color: white;
-		border: none;
-		border-radius: var(--radius);
-		cursor: pointer;
-		white-space: nowrap;
-		transition: background 0.15s;
-	}
-
-	.btn-add:hover {
-		background: var(--green-dark);
 	}
 
 	.error {

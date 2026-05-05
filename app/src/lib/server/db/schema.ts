@@ -23,6 +23,7 @@ export const recipes = pgTable('recipes', {
 	fatG: integer('fat_g'),
 	carbsG: integer('carbs_g'),
 	proteinG: integer('protein_g'),
+	preparation: text('preparation'),
 	createdAt: timestamp('created_at').notNull().defaultNow()
 });
 
@@ -31,7 +32,8 @@ export const basketItems = pgTable('basket_items', {
 	weekStart: date('week_start').notNull(),
 	displayText: text('display_text').notNull(),
 	matchKey: text('match_key').notNull(),
-	permanent: boolean('permanent').notNull().default(false)
+	permanent: boolean('permanent').notNull().default(false),
+	deliveryDate: date('delivery_date')
 });
 
 export const mealPlanEntries = pgTable(
@@ -70,6 +72,12 @@ export const ingredientGroups = pgTable('ingredient_groups', {
 	id: serial('id').primaryKey(),
 	label: text('label').notNull(),
 	matchKeys: text('match_keys').array().notNull().default([])
+});
+
+export const fridgeItems = pgTable('fridge_items', {
+	id: serial('id').primaryKey(),
+	displayText: text('display_text').notNull(),
+	matchKey: text('match_key').notNull()
 });
 
 // Ingredient match keys that count toward the 30-plants-per-week goal.

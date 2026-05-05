@@ -11,6 +11,10 @@ const recipe = (id: number, name: string, matchKeys: string[], course: string | 
 	course
 });
 
+function bk(keys: string[]): { matchKey: string; deliveryDate: string | null }[] {
+	return keys.map((k) => ({ matchKey: k, deliveryDate: null }));
+}
+
 // Fixed test dates: 2024-01-01 is a Monday
 const D0 = '2024-01-01';
 const D1 = '2024-01-02';
@@ -20,7 +24,8 @@ describe('suggestPlan', () => {
 	it('assigns matching recipes to slots', () => {
 		const result = suggestPlan({
 			allRecipes: [recipe(1, 'Rüebli-Suppe', ['rüebli'])],
-			basketKeys: new Set(['rüebli']),
+			basketItems: bk(['rüebli']),
+			fridgeItems: [],
 			usedIds: new Set(),
 			occupiedKeys: new Set(),
 			notNeededSlotKeys: new Set(),
@@ -35,7 +40,8 @@ describe('suggestPlan', () => {
 	it('skips recipes with no basket match', () => {
 		const result = suggestPlan({
 			allRecipes: [recipe(1, 'Pasta', ['pasta', 'tomate'])],
-			basketKeys: new Set(['rüebli']),
+			basketItems: bk(['rüebli']),
+			fridgeItems: [],
 			usedIds: new Set(),
 			occupiedKeys: new Set(),
 			notNeededSlotKeys: new Set(),
@@ -49,7 +55,8 @@ describe('suggestPlan', () => {
 	it('does not assign the same recipe twice', () => {
 		const result = suggestPlan({
 			allRecipes: [recipe(1, 'Rüebli-Suppe', ['rüebli'])],
-			basketKeys: new Set(['rüebli']),
+			basketItems: bk(['rüebli']),
+			fridgeItems: [],
 			usedIds: new Set(),
 			occupiedKeys: new Set(),
 			notNeededSlotKeys: new Set(),
@@ -67,7 +74,8 @@ describe('suggestPlan', () => {
 	it('skips slots in usedIds', () => {
 		const result = suggestPlan({
 			allRecipes: [recipe(1, 'Rüebli-Suppe', ['rüebli'])],
-			basketKeys: new Set(['rüebli']),
+			basketItems: bk(['rüebli']),
+			fridgeItems: [],
 			usedIds: new Set([1]),
 			occupiedKeys: new Set(),
 			notNeededSlotKeys: new Set(),
@@ -81,7 +89,8 @@ describe('suggestPlan', () => {
 	it('marks not-needed slots', () => {
 		const result = suggestPlan({
 			allRecipes: [recipe(1, 'Rüebli-Suppe', ['rüebli'])],
-			basketKeys: new Set(['rüebli']),
+			basketItems: bk(['rüebli']),
+			fridgeItems: [],
 			usedIds: new Set(),
 			occupiedKeys: new Set(),
 			notNeededSlotKeys: new Set([`${D0}-lunch`]),
@@ -96,7 +105,8 @@ describe('suggestPlan', () => {
 	it('skips occupied slots', () => {
 		const result = suggestPlan({
 			allRecipes: [recipe(1, 'Rüebli-Suppe', ['rüebli'])],
-			basketKeys: new Set(['rüebli']),
+			basketItems: bk(['rüebli']),
+			fridgeItems: [],
 			usedIds: new Set([1]),
 			occupiedKeys: new Set([`${D0}-lunch-main`]),
 			notNeededSlotKeys: new Set(),
@@ -113,11 +123,11 @@ describe('suggestPlan', () => {
 			recipe(2, 'Rüebli-Suppe', ['rüebli']),
 			recipe(3, 'Zucchini-Pfanne', ['zucchini'])
 		];
-		const basketKeys = new Set(['rüebli', 'zucchini', 'reis']);
 
 		const result = suggestPlan({
 			allRecipes: recipes,
-			basketKeys,
+			basketItems: bk(['rüebli', 'zucchini', 'reis']),
+			fridgeItems: [],
 			usedIds: new Set(),
 			occupiedKeys: new Set(),
 			notNeededSlotKeys: new Set(),
@@ -141,7 +151,8 @@ describe('suggestPlan', () => {
 		);
 		const result = suggestPlan({
 			allRecipes: [recipe(1, 'Rüebli-Suppe', ['rüebli'])],
-			basketKeys: new Set(['karotte']),
+			basketItems: bk(['karotte']),
+			fridgeItems: [],
 			usedIds: new Set(),
 			occupiedKeys: new Set(),
 			notNeededSlotKeys: new Set(),
@@ -179,7 +190,8 @@ describe('suggestPlan', () => {
 
 		const result = suggestPlan({
 			allRecipes: recipes,
-			basketKeys: new Set(['rüebli', 'zucchini']),
+			basketItems: bk(['rüebli', 'zucchini']),
+			fridgeItems: [],
 			usedIds: new Set(),
 			occupiedKeys: new Set(),
 			notNeededSlotKeys: new Set(),
@@ -201,7 +213,8 @@ describe('suggestPlan', () => {
 
 		const result = suggestPlan({
 			allRecipes: recipes,
-			basketKeys: new Set(['rüebli']),
+			basketItems: bk(['rüebli']),
+			fridgeItems: [],
 			usedIds: new Set(),
 			occupiedKeys: new Set(),
 			notNeededSlotKeys: new Set(),
@@ -220,7 +233,8 @@ describe('suggestPlan', () => {
 
 		const result = suggestPlan({
 			allRecipes: recipes,
-			basketKeys: new Set(['rüebli']),
+			basketItems: bk(['rüebli']),
+			fridgeItems: [],
 			usedIds: new Set(),
 			occupiedKeys: new Set(),
 			notNeededSlotKeys: new Set(),
@@ -241,7 +255,8 @@ describe('suggestPlan', () => {
 
 		const result = suggestPlan({
 			allRecipes: recipes,
-			basketKeys: new Set(['rüebli', 'zucchini']),
+			basketItems: bk(['rüebli', 'zucchini']),
+			fridgeItems: [],
 			usedIds: new Set(),
 			occupiedKeys: new Set(),
 			notNeededSlotKeys: new Set(),
@@ -251,5 +266,58 @@ describe('suggestPlan', () => {
 
 		const ids = result.map((e) => e.recipeId);
 		expect(new Set(ids).size).toBe(ids.length); // no duplicates
+	});
+
+	it('fridge items allow recipe to be eligible even without basket match', () => {
+		const result = suggestPlan({
+			allRecipes: [recipe(1, 'Pasta', ['pasta'])],
+			basketItems: bk(['rüebli']),
+			fridgeItems: [{ matchKey: 'pasta' }],
+			usedIds: new Set(),
+			occupiedKeys: new Set(),
+			notNeededSlotKeys: new Set(),
+			slots: [[D0, 'lunch']],
+			normalize: noAliasNormalize
+		});
+
+		expect(result).toHaveLength(1);
+		expect(result[0].recipeId).toBe(1);
+	});
+
+	it('fridge items are preferred over basket-only recipes', () => {
+		const result = suggestPlan({
+			allRecipes: [
+				recipe(1, 'Rüebli-Suppe', ['rüebli']),
+				recipe(2, 'Pasta', ['pasta'])
+			],
+			basketItems: bk(['rüebli']),
+			fridgeItems: [{ matchKey: 'pasta' }],
+			usedIds: new Set(),
+			occupiedKeys: new Set(),
+			notNeededSlotKeys: new Set(),
+			slots: [[D0, 'lunch'], [D0, 'dinner']],
+			normalize: noAliasNormalize
+		});
+
+		expect(result[0].recipeId).toBe(2); // fridge match comes first
+		expect(result[1].recipeId).toBe(1); // basket-only recipe second
+	});
+
+	it('delivery date gating: basket items not yet available are not matched for earlier slots', () => {
+		const result = suggestPlan({
+			allRecipes: [recipe(1, 'Rüebli-Suppe', ['rüebli'])],
+			basketItems: [{ matchKey: 'rüebli', deliveryDate: D1 }], // delivered on D1
+			fridgeItems: [],
+			usedIds: new Set(),
+			occupiedKeys: new Set(),
+			notNeededSlotKeys: new Set(),
+			slots: [[D0, 'lunch'], [D1, 'lunch']], // D0 slot is before delivery
+			normalize: noAliasNormalize
+		});
+
+		// D0 slot should be empty (delivery not yet), D1 slot should have the recipe
+		expect(result.find((e) => e.date === D0)).toBeUndefined();
+		const d1Entry = result.find((e) => e.date === D1);
+		expect(d1Entry?.recipeId).toBe(1);
 	});
 });

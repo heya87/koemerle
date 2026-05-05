@@ -25,6 +25,7 @@ export const actions: Actions = {
 		const servings = servingsRaw ? Number(servingsRaw) : null;
 		const courseRaw = formData.get('course')?.toString().trim() || null;
 		const course = courseRaw === 'main' || courseRaw === 'side' ? courseRaw : null;
+		const preparation = formData.get('preparation')?.toString().trim() || null;
 
 		function parseNutrient(key: string): number | null {
 			const raw = formData.get(key)?.toString().trim();
@@ -36,14 +37,14 @@ export const actions: Actions = {
 		const carbsG = parseNutrient('carbs_g');
 		const proteinG = parseNutrient('protein_g');
 
-		const failData = { name, ingredients, recipeUrl, servings, course, kcal, fatG, carbsG, proteinG };
+		const failData = { name, ingredients, recipeUrl, servings, course, preparation, kcal, fatG, carbsG, proteinG };
 		if (!name) return fail(400, { message: 'Name ist erforderlich.', ...failData });
 		if (!ingredients) return fail(400, { message: 'Zutaten sind erforderlich.', ...failData });
 		if (recipeUrl && !/^https?:\/\//i.test(recipeUrl)) return fail(400, { message: 'URL muss mit http:// oder https:// beginnen.', ...failData });
 
 		const matchKeys = generateMatchKeys(ingredients);
 
-		await db.update(recipes).set({ name, ingredients, matchKeys, recipeUrl, servings, course, kcal, fatG, carbsG, proteinG }).where(eq(recipes.id, id));
+		await db.update(recipes).set({ name, ingredients, matchKeys, recipeUrl, servings, course, preparation, kcal, fatG, carbsG, proteinG }).where(eq(recipes.id, id));
 		return redirect(303, '/recipes');
 	}
 };

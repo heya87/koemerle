@@ -29,6 +29,27 @@
       "when": 1775606400000,
       "tag": "0003_recipe_nutrition",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775606401000,
+      "tag": "0004_recipe_preparation",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775606402000,
+      "tag": "0005_basket_delivery_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1775606403000,
+      "tag": "0006_fridge_items",
+      "breakpoints": true
     }
   ]
 }

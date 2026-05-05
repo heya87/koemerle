@@ -26,6 +26,9 @@
 					{#if recipe.servings}
 						<span class="card-servings">{recipe.servings} P.</span>
 					{/if}
+					{#if recipe.preparation}
+						<p class="card-preparation">{recipe.preparation}</p>
+					{/if}
 					{#if recipe.recipeUrl}
 						<a href={recipe.recipeUrl} target="_blank" rel="noopener" class="card-link">Rezept →</a>
 					{/if}
@@ -189,6 +192,13 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.card-preparation {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		white-space: pre-wrap;
+		margin: 0;
 	}
 
 	.card-link {

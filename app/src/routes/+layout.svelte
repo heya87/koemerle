@@ -36,6 +36,7 @@
 			<a href="/plan">Wochenplan</a>
 			<a href="/recipes">Rezepte</a>
 			<a href="/basket">Gemüsekorb</a>
+			<a href="/fridge">Kühlschrank</a>
 			<a href="/shopping">Einkaufen</a>
 		</nav>
 		<div class="user-area">
@@ -268,6 +269,7 @@
 		<a href="/plan">Wochenplan</a>
 		<a href="/recipes">Rezepte</a>
 		<a href="/basket">Gemüsekorb</a>
+		<a href="/fridge">Kühlschrank</a>
 		<a href="/shopping">Einkaufen</a>
 	</nav>
 {/if}

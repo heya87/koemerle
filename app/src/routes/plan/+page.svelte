@@ -244,6 +244,9 @@
 		const rect = triggerEl.getBoundingClientRect();
 		editing = entryKey(date, slot, course);
 		editingPopup = { date, slot, course, top: rect.bottom + 6, left: rect.left, width: Math.max(rect.width, 260) };
+		recipeFilter = '';
+		selectedRecipeId = null;
+		showRecipeList = false;
 	}
 
 	function closeEditing() {
@@ -309,6 +312,18 @@
 	}
 
 	let draftCount = $derived(draft?.filter((e) => !e.notNeeded).length ?? 0);
+
+	let networkError = $state<string | null>(null);
+
+	let recipeFilter = $state('');
+	let selectedRecipeId = $state<number | null>(null);
+	let showRecipeList = $state(false);
+	let entryForm: HTMLFormElement | undefined = $state();
+	let filteredRecipes = $derived(
+		recipeFilter.trim() === ''
+			? data.allRecipes
+			: data.allRecipes.filter((r) => r.name.toLowerCase().includes(recipeFilter.toLowerCase()))
+	);
 </script>
 
 {#snippet courseEntry(date: string, slot: Slot, course: Course)}
@@ -341,22 +356,25 @@
 			{#if draft !== null}
 				<button class="btn-clear-entry" title="Entfernen" onclick={() => removeDraftEntry(date, slot, course)}>✕</button>
 			{:else}
-				<form method="post" action="?/clearSlot" use:enhance>
+				<form method="post" action="?/clearSlot" use:enhance={() => async ({ result, update }) => {
+						if (result.type === 'error') { networkError = 'Verbindungsfehler – bitte erneut versuchen.'; return; }
+						networkError = null; await update();
+					}}>
 					<input type="hidden" name="date" value={date} />
 					<input type="hidden" name="slot" value={slot} />
 					<input type="hidden" name="course" value={course} />
 					<button type="submit" class="btn-clear-entry" title="Leeren">✕</button>
 				</form>
 			{/if}
-		{:else if draft === null}
+		{:else}
 			<button
 				class="btn-add-entry"
 				class:btn-add-side={course === 'side'}
 				class:is-editing={editing === key}
 				onclick={(e) => openEditing(date, slot, course, (e.currentTarget as HTMLElement).closest('.day-slot-cell, .slot-courses') ?? e.currentTarget as HTMLElement)}
-				disabled={!data.meta}
+				disabled={draft === null && !data.meta}
 			>
-				{#if !data.meta}
+				{#if draft === null && !data.meta}
 					{course === 'main' ? '—' : ''}
 				{:else if course === 'side'}
 					+ Beilage
@@ -380,7 +398,13 @@
 			method="post"
 			action="?/getSuggestion"
 			use:enhance={() => {
-				return async ({ update }) => {
+				return async ({ result, update }) => {
+					if (result.type === 'error') {
+						networkError = 'Verbindungsfehler – bitte erneut versuchen.';
+						closeModal();
+						return;
+					}
+					networkError = null;
 					closeModal();
 					await update();
 				};
@@ -453,6 +477,14 @@
 		</form>
 	</div>
 </dialog>
+
+<!-- Network error banner -->
+{#if networkError}
+	<div class="network-error-banner">
+		<span>{networkError}</span>
+		<button type="button" class="btn-dismiss-error" onclick={() => (networkError = null)}>✕</button>
+	</div>
+{/if}
 
 <!-- Page header -->
 <div class="page-header">
@@ -531,7 +563,10 @@
 										{#if draft !== null}
 											<button class="btn-clear-entry" onclick={() => removeDraftEntry(date, slot, 'main')}>✕</button>
 										{:else}
-											<form method="post" action="?/clearSlot" use:enhance>
+											<form method="post" action="?/clearSlot" use:enhance={() => async ({ result, update }) => {
+													if (result.type === 'error') { networkError = 'Verbindungsfehler – bitte erneut versuchen.'; return; }
+													networkError = null; await update();
+												}}>
 												<input type="hidden" name="date" value={date} />
 												<input type="hidden" name="slot" value={slot} />
 												<input type="hidden" name="course" value="main" />
@@ -568,7 +603,10 @@
 							{#if draft !== null}
 								<button class="btn-clear-entry" onclick={() => removeDraftEntry(date, slot, 'main')}>✕</button>
 							{:else}
-								<form method="post" action="?/clearSlot" use:enhance>
+								<form method="post" action="?/clearSlot" use:enhance={() => async ({ result, update }) => {
+										if (result.type === 'error') { networkError = 'Verbindungsfehler – bitte erneut versuchen.'; return; }
+										networkError = null; await update();
+									}}>
 									<input type="hidden" name="date" value={date} />
 									<input type="hidden" name="slot" value={slot} />
 									<input type="hidden" name="course" value="main" />
@@ -692,12 +730,17 @@
 			method="post"
 			action="?/confirmPlan"
 			use:enhance={() => {
-				return ({ update }) => {
+				return async ({ result, update }) => {
+					if (result.type === 'error') {
+						networkError = 'Verbindungsfehler – bitte erneut versuchen.';
+						return;
+					}
+					networkError = null;
 					draft = null;
 					draftStartDate = null;
 					draftEndDate = null;
 					draftStartSlot = null;
-					update();
+					await update();
 				};
 			}}
 		>
@@ -716,19 +759,73 @@
 	<form
 		method="post"
 		action="?/setSlot"
-		use:enhance={() => async ({ update }) => { closeEditing(); await update(); }}
+		use:enhance={({ cancel, formData }) => {
+			if (draft !== null) {
+				cancel();
+				const recipeIdRaw = formData.get('recipeId');
+				const freeText = (formData.get('freeText') as string)?.trim() ?? '';
+				const recipeId = recipeIdRaw ? Number(recipeIdRaw) : null;
+				const recipe = recipeId ? (data.allRecipes.find((r) => r.id === recipeId) ?? null) : null;
+				const { date, slot, course } = editingPopup!;
+				const newEntry: DraftEntry = {
+					date,
+					slot,
+					course,
+					recipeId: recipe?.id ?? null,
+					recipeName: recipe?.name ?? (freeText || null),
+					recipeUrl: recipe?.recipeUrl ?? null,
+					notNeeded: false
+				};
+				draft = [
+					...(draft?.filter((e) => !(e.date === date && e.slot === slot && e.course === course)) ?? []),
+					newEntry
+				];
+				closeEditing();
+				return;
+			}
+			return async ({ result, update }) => {
+				if (result.type === 'error') {
+					networkError = 'Verbindungsfehler – bitte erneut versuchen.';
+					closeEditing();
+					return;
+				}
+				networkError = null;
+				closeEditing();
+				await update();
+			};
+		}}
+		bind:this={entryForm}
 		class="entry-popup"
 		style="top: {editingPopup.top}px; left: {editingPopup.left}px; width: {editingPopup.width}px;"
 	>
 		<input type="hidden" name="date" value={editingPopup.date} />
 		<input type="hidden" name="slot" value={editingPopup.slot} />
 		<input type="hidden" name="course" value={editingPopup.course} />
-		<select name="recipeId" class="entry-select">
-			<option value="">— Freitext —</option>
-			{#each data.allRecipes as r}
-				<option value={r.id}>{r.name}</option>
-			{/each}
-		</select>
+		<input type="hidden" name="recipeId" value={selectedRecipeId ?? ''} />
+		<div class="combobox">
+			<input
+				type="text"
+				class="entry-input"
+				placeholder="Rezept suchen…"
+				bind:value={recipeFilter}
+				onfocus={() => (showRecipeList = true)}
+				oninput={() => { selectedRecipeId = null; showRecipeList = true; }}
+				onblur={() => setTimeout(() => (showRecipeList = false), 150)}
+			/>
+			{#if showRecipeList && filteredRecipes.length > 0}
+				<ul class="recipe-list">
+					{#each filteredRecipes as r}
+						<li>
+							<button
+								type="button"
+								class="recipe-option"
+								onclick={async () => { selectedRecipeId = r.id; recipeFilter = r.name; showRecipeList = false; await tick(); entryForm?.requestSubmit(); }}
+							>{r.name}</button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
 		<input type="text" name="freeText" placeholder="Freitext..." class="entry-input" />
 		<div class="entry-form-actions">
 			<button type="submit" class="btn-ok">OK</button>
@@ -1725,7 +1822,8 @@
 			opacity: 0;
 		}
 
-		.day-slot-cell .course-row:hover .btn-clear-entry {
+		.day-slot-cell .course-row:hover .btn-clear-entry,
+		.day-slot-cell .cell-not-needed:hover .btn-clear-entry {
 			opacity: 1;
 		}
 
@@ -1765,5 +1863,75 @@
 			bottom: 0;
 			border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 		}
+	}
+
+	/* ── Network error banner ── */
+	.network-error-banner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		background: #fdf0f0;
+		border: 1.5px solid var(--red, #d94f4f);
+		border-radius: var(--radius);
+		padding: 0.6rem 0.875rem;
+		margin-bottom: 1rem;
+		font-size: 0.875rem;
+		color: var(--red, #d94f4f);
+	}
+
+	.btn-dismiss-error {
+		background: none;
+		border: none;
+		color: var(--red, #d94f4f);
+		cursor: pointer;
+		font-size: 0.8rem;
+		padding: 0.1rem 0.3rem;
+		flex-shrink: 0;
+	}
+
+	/* ── Combobox (recipe picker) ── */
+	.combobox {
+		position: relative;
+	}
+
+	.recipe-list {
+		position: absolute;
+		top: calc(100% + 2px);
+		left: 0;
+		right: 0;
+		z-index: 200;
+		list-style: none;
+		margin: 0;
+		padding: 0.25rem 0;
+		background: var(--surface);
+		border: 1.5px solid var(--green);
+		border-radius: var(--radius);
+		box-shadow: 0 4px 16px rgba(42, 37, 32, 0.14);
+		max-height: 180px;
+		overflow-y: auto;
+	}
+
+	.recipe-list li {
+		margin: 0;
+		padding: 0;
+	}
+
+	.recipe-option {
+		display: block;
+		width: 100%;
+		text-align: left;
+		background: none;
+		border: none;
+		padding: 0.4rem 0.65rem;
+		font-size: 0.875rem;
+		font-family: inherit;
+		color: var(--text);
+		cursor: pointer;
+	}
+
+	.recipe-option:hover {
+		background: var(--green-light);
+		color: var(--green-dark);
 	}
 </style>
