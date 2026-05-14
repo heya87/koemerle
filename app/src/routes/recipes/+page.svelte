@@ -3,6 +3,13 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	let filter = $state('');
+	let filteredRecipes = $derived(
+		filter.trim() === ''
+			? data.recipes
+			: data.recipes.filter((r) => r.name.toLowerCase().includes(filter.toLowerCase()))
+	);
 </script>
 
 <div class="page-header">
@@ -13,24 +20,35 @@
 	</div>
 </div>
 
+<input
+	type="text"
+	class="recipe-filter"
+	placeholder="Rezepte filtern…"
+	bind:value={filter}
+/>
+
 {#if data.recipes.length === 0}
 	<p class="empty">Noch keine Rezepte vorhanden.</p>
+{:else if filteredRecipes.length === 0}
+	<p class="empty">Kein Rezept gefunden.</p>
 {:else}
 	<!-- Mobile: card list -->
 	<ul class="card-list">
-		{#each data.recipes as recipe}
+		{#each filteredRecipes as recipe}
 			<li class="recipe-card">
 				<div class="card-main">
-					<span class="card-name">{recipe.name}</span>
+					<a
+						href={recipe.recipeUrl ?? `/recipes/${recipe.id}/edit`}
+						target={recipe.recipeUrl ? '_blank' : undefined}
+						rel={recipe.recipeUrl ? 'noopener' : undefined}
+						class="card-name"
+					>{recipe.name}</a>
 					<span class="card-course">{recipe.course === 'main' ? 'Hauptgang' : recipe.course === 'side' ? 'Beilage' : 'Beide'}</span>
 					{#if recipe.servings}
 						<span class="card-servings">{recipe.servings} P.</span>
 					{/if}
 					{#if recipe.preparation}
 						<p class="card-preparation">{recipe.preparation}</p>
-					{/if}
-					{#if recipe.recipeUrl}
-						<a href={recipe.recipeUrl} target="_blank" rel="noopener" class="card-link">Rezept →</a>
 					{/if}
 				</div>
 				<div class="card-actions">
@@ -65,9 +83,15 @@
 			</tr>
 		</thead>
 		<tbody>
-			{#each data.recipes as recipe}
+			{#each filteredRecipes as recipe}
 				<tr>
-					<td class="col-name">{recipe.name}</td>
+					<td class="col-name">
+						<a
+							href={recipe.recipeUrl ?? `/recipes/${recipe.id}/edit`}
+							target={recipe.recipeUrl ? '_blank' : undefined}
+							rel={recipe.recipeUrl ? 'noopener' : undefined}
+						>{recipe.name}</a>
+					</td>
 					<td class="col-course">{recipe.course === 'main' ? 'Hauptgang' : recipe.course === 'side' ? 'Beilage' : 'Beide'}</td>
 					<td class="col-servings">{recipe.servings ?? '—'}</td>
 					<td class="col-keys">{recipe.matchKeys.join(', ')}</td>
@@ -103,7 +127,25 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		margin-bottom: 1.5rem;
+		margin-bottom: 1rem;
+	}
+
+	.recipe-filter {
+		width: 100%;
+		padding: 0.5rem 0.75rem;
+		font-size: 0.9rem;
+		font-family: inherit;
+		border: 1.5px solid var(--border-strong);
+		border-radius: var(--radius);
+		background: var(--bg);
+		color: var(--text);
+		outline: none;
+		margin-bottom: 1.25rem;
+		box-sizing: border-box;
+	}
+
+	.recipe-filter:focus {
+		border-color: var(--green);
 	}
 
 	.header-actions {
@@ -192,6 +234,13 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		color: var(--text);
+		text-decoration: none;
+	}
+
+	.card-name:hover {
+		color: var(--green);
+		text-decoration: underline;
 	}
 
 	.card-preparation {
@@ -288,6 +337,17 @@
 
 		tbody tr:hover td {
 			background: #faf9f7;
+		}
+
+		.col-name a {
+			color: var(--text);
+			text-decoration: none;
+			font-weight: 500;
+		}
+
+		.col-name a:hover {
+			color: var(--green);
+			text-decoration: underline;
 		}
 
 		.col-course,

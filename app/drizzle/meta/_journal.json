@@ -50,6 +50,13 @@
       "when": 1775606403000,
       "tag": "0006_fridge_items",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1747044000000,
+      "tag": "0007_fix_ingredient_groups_unique",
+      "breakpoints": true
     }
   ]
 }

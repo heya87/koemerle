@@ -22,7 +22,6 @@
 	const SLOT_LABELS: Record<Slot, string> = { lunch: 'Mittag', dinner: 'Abend' };
 	const COURSES: Course[] = ['main', 'side'];
 	const DESKTOP_DAYS = 7;
-	const MOBILE_VISIBLE = 5; // day cards visible at once on mobile
 
 	// ── Date helpers ──
 	function addDays(dateStr: string, n: number): string {
@@ -64,9 +63,13 @@
 	let desktopDates = $derived(
 		Array.from({ length: DESKTOP_DAYS }, (_, i) => addDays(viewStartDate, i))
 	);
-	// Mobile: 7-card vertical strip (1 buffer + 5 visible + 1 buffer)
-	let mobileStripDates = $derived(
-		Array.from({ length: MOBILE_VISIBLE + 2 }, (_, i) => addDays(viewStartDate, i - 1))
+	// Mobile: scrollable list covering 7 days before today + 35 days after
+	const MOBILE_HISTORY = 7;
+	const MOBILE_FUTURE = 35;
+	let allMobileDates = $derived(
+		Array.from({ length: MOBILE_HISTORY + MOBILE_FUTURE }, (_, i) =>
+			addDays(data.today, i - MOBILE_HISTORY)
+		)
 	);
 	// Desktop: 9-column strip (1 buffer + 7 visible + 1 buffer), slides by 1 column = 1/7 container
 	let desktopTrackDates = $derived(
@@ -76,28 +79,20 @@
 	// ── Slide tracks ──
 	const SLIDE_MS = 550;
 	let isAnimating = $state(false);
-	let mobileWrapper: HTMLElement | undefined = $state();
-	let mobileTrack: HTMLElement | undefined = $state();
+	let scrollContainer: HTMLElement | undefined = $state();
 	let desktopTrack: HTMLElement | undefined = $state();
 
 	function desktopColWidth(): number {
 		return (desktopTrack?.parentElement?.offsetWidth ?? 0) / 7;
 	}
 
-	function mobileCardHeight(): number {
-		// strip has MOBILE_VISIBLE + 2 equal-height cards
-		return (mobileTrack?.offsetHeight ?? 0) / (MOBILE_VISIBLE + 2);
-	}
-
 	onMount(() => {
 		if (desktopTrack) {
 			desktopTrack.style.transform = `translateX(${-desktopColWidth()}px)`;
 		}
-		if (mobileWrapper && mobileTrack) {
-			const cardH = mobileCardHeight();
-			mobileWrapper.style.height = `${MOBILE_VISIBLE * cardH}px`;
-			mobileTrack.style.transform = `translateY(${-cardH}px)`;
-		}
+		requestAnimationFrame(() => {
+			scrollContainer?.querySelector(`[data-date="${data.today}"]`)?.scrollIntoView();
+		});
 	});
 
 	async function navDay(delta: number) {
@@ -106,15 +101,7 @@
 
 		const easing = 'cubic-bezier(0.25, 0.46, 0.45, 0.94)';
 
-		// Mobile: slide vertically by exactly 1 card height
-		if (mobileTrack) {
-			const cardH = mobileCardHeight();
-			const target = delta > 0 ? -2 * cardH : 0;
-			mobileTrack.style.transition = `transform ${SLIDE_MS}ms ${easing}`;
-			mobileTrack.style.transform = `translateY(${target}px)`;
-		}
-
-		// Desktop: slide exactly 1 column width in pixels
+		// Desktop only: slide exactly 1 column width in pixels
 		if (desktopTrack) {
 			const colW = desktopColWidth();
 			const target = delta > 0 ? -2 * colW : 0;
@@ -127,12 +114,6 @@
 		viewStartDate = addDays(viewStartDate, delta);
 		await tick();
 
-		if (mobileWrapper && mobileTrack) {
-			const cardH = mobileCardHeight();
-			mobileWrapper.style.height = `${MOBILE_VISIBLE * cardH}px`;
-			mobileTrack.style.transition = 'none';
-			mobileTrack.style.transform = `translateY(${-cardH}px)`;
-		}
 		if (desktopTrack) {
 			desktopTrack.style.transition = 'none';
 			desktopTrack.style.transform = `translateX(${-desktopColWidth()}px)`;
@@ -193,9 +174,26 @@
 
 	function entryUrl(entry: DraftEntry | DbEntry | null): string | null {
 		if (!entry) return null;
-		if ('recipeUrl' in entry) return (entry as DraftEntry).recipeUrl;
-		return getRecipe((entry as DbEntry).recipeId ?? null)?.recipeUrl ?? null;
+		if ('recipeUrl' in entry) {
+			const e = entry as DraftEntry;
+			if (e.recipeUrl) return e.recipeUrl;
+			if (e.recipeId) return `/recipes/${e.recipeId}/edit`;
+			return null;
+		}
+		const recipe = getRecipe((entry as DbEntry).recipeId ?? null);
+		if (recipe?.recipeUrl) return recipe.recipeUrl;
+		if (recipe?.id) return `/recipes/${recipe.id}/edit`;
+		return null;
 	}
+
+	function entryIsExternal(entry: DraftEntry | DbEntry | null): boolean {
+		if (!entry) return false;
+		if ('recipeUrl' in entry) return !!(entry as DraftEntry).recipeUrl;
+		return !!(getRecipe((entry as DbEntry).recipeId ?? null)?.recipeUrl);
+	}
+
+	// ── Stats popup (mobile) ──
+	let statsDialog: HTMLDialogElement | undefined = $state();
 
 	// ── Modal ──
 	let dialog: HTMLDialogElement | undefined = $state();
@@ -319,6 +317,7 @@
 	let selectedRecipeId = $state<number | null>(null);
 	let showRecipeList = $state(false);
 	let entryForm: HTMLFormElement | undefined = $state();
+
 	let filteredRecipes = $derived(
 		recipeFilter.trim() === ''
 			? data.allRecipes
@@ -348,7 +347,11 @@
 				ondragend={onDragEnd}
 			>
 				{#if entryUrl(entry)}
-					<a href={entryUrl(entry)!} target="_blank" rel="noopener">{entryLabel(entry)}</a>
+					<a
+						href={entryUrl(entry)!}
+						target={entryIsExternal(entry) ? '_blank' : undefined}
+						rel={entryIsExternal(entry) ? 'noopener' : undefined}
+					>{entryLabel(entry)}</a>
 				{:else}
 					{entryLabel(entry)}
 				{/if}
@@ -478,13 +481,16 @@
 	</div>
 </dialog>
 
-<!-- Network error banner -->
+<!-- Network error banner (outside plan-page so it's always visible) -->
 {#if networkError}
 	<div class="network-error-banner">
 		<span>{networkError}</span>
 		<button type="button" class="btn-dismiss-error" onclick={() => (networkError = null)}>✕</button>
 	</div>
 {/if}
+
+<div class="plan-page">
+<div class="plan-upper">
 
 <!-- Page header -->
 <div class="page-header">
@@ -528,7 +534,6 @@
 		<span class="confirmed-label">
 			Plan: {formatDate(data.meta.planStart)} – {formatDate(data.meta.planEnd)}
 		</span>
-		<button class="btn-replan" type="button" onclick={() => openModal(true)}>Neu vorschlagen</button>
 	</div>
 {:else}
 	<div class="no-plan-bar">
@@ -540,14 +545,25 @@
 <!-- Pager navigation -->
 <div class="pager-nav">
 	<button class="btn-nav" onclick={() => navDay(-1)} aria-label="Vorheriger Tag">&#8249;</button>
-	<button class="btn-today" onclick={() => (viewStartDate = data.today)}>Heute</button>
+	<button class="btn-today" onclick={() => {
+		viewStartDate = data.today;
+		scrollContainer?.querySelector(`[data-date="${data.today}"]`)?.scrollIntoView({ behavior: 'smooth' });
+	}}>Heute</button>
 	<button class="btn-nav" onclick={() => navDay(1)} aria-label="Nächster Tag">&#8250;</button>
+	<div class="pager-right">
+		{#if data.meta && draft === null}
+			<button class="btn-replan" type="button" onclick={() => openModal(true)}>Neu vorschlagen</button>
+		{/if}
+		<button class="btn-stats" type="button" onclick={() => statsDialog?.showModal()}>Statistik</button>
+	</div>
 </div>
+
+</div><!-- end .plan-upper -->
 
 {#snippet dayCardsList(dates: string[])}
 	<div class="day-cards">
 		{#each dates as date}
-			<div class="day-card">
+			<div class="day-card" data-date={date}>
 				<div class="day-date-col" class:is-today={date === data.today}>
 					{formatDayHeader(date)}
 				</div>
@@ -625,11 +641,9 @@
 	{/each}
 {/snippet}
 
-<!-- Mobile: vertical strip (1 buffer + 5 visible + 1 buffer) -->
-<div class="slide-wrapper" bind:this={mobileWrapper}>
-	<div class="mobile-track" bind:this={mobileTrack}>
-		{@render dayCardsList(mobileStripDates)}
-	</div>
+<!-- Mobile: scroll-snap day list -->
+<div class="slide-wrapper" bind:this={scrollContainer}>
+	{@render dayCardsList(allMobileDates)}
 </div>
 
 <!-- Desktop: fixed label column + 3-panel sliding day columns -->
@@ -646,10 +660,46 @@
 	</div>
 </div>
 
-<!-- Plant diversity bar -->
+<!-- Confirm bar (flex child at bottom of plan-page in draft mode) -->
+{#if draft !== null}
+	<div class="confirm-bar">
+		<span class="confirm-info">
+			{draftCount} Mahlzeit{draftCount !== 1 ? 'en' : ''} vorgeschlagen
+		</span>
+		<form
+			method="post"
+			action="?/confirmPlan"
+			use:enhance={() => {
+				return async ({ result, update }) => {
+					if (result.type === 'error') {
+						networkError = 'Verbindungsfehler – bitte erneut versuchen.';
+						return;
+					}
+					networkError = null;
+					draft = null;
+					draftStartDate = null;
+					draftEndDate = null;
+					draftStartSlot = null;
+					await update();
+				};
+			}}
+		>
+			<input type="hidden" name="startDate" value={draftStartDate} />
+			<input type="hidden" name="endDate" value={draftEndDate} />
+			<input type="hidden" name="startSlot" value={draftStartSlot} />
+			<input type="hidden" name="entries" value={JSON.stringify(draft)} />
+			<button type="submit" class="btn-confirm">Plan bestätigen</button>
+		</form>
+	</div>
+{/if}
+
+</div><!-- end .plan-page -->
+
+<!-- Plant diversity + macro bars: desktop only (mobile uses stats popup) -->
 {#if draft === null}
 	{@const pct = Math.min(data.plantCount / data.plantGoal, 1)}
 	{@const full = data.plantCount >= data.plantGoal}
+<div class="stats-desktop-section">
 	<div class="plant-bar">
 		<div class="plant-bar-header">
 			<span class="plant-bar-label">Pflanzliche Vielfalt</span>
@@ -718,40 +768,82 @@
 			{/if}
 		</div>
 	{/if}
+</div>
 {/if}
 
-<!-- Confirm bar (sticky bottom, only in draft mode) -->
-{#if draft !== null}
-	<div class="confirm-bar">
-		<span class="confirm-info">
-			{draftCount} Mahlzeit{draftCount !== 1 ? 'en' : ''} vorgeschlagen
-		</span>
-		<form
-			method="post"
-			action="?/confirmPlan"
-			use:enhance={() => {
-				return async ({ result, update }) => {
-					if (result.type === 'error') {
-						networkError = 'Verbindungsfehler – bitte erneut versuchen.';
-						return;
-					}
-					networkError = null;
-					draft = null;
-					draftStartDate = null;
-					draftEndDate = null;
-					draftStartSlot = null;
-					await update();
-				};
-			}}
-		>
-			<input type="hidden" name="startDate" value={draftStartDate} />
-			<input type="hidden" name="endDate" value={draftEndDate} />
-			<input type="hidden" name="startSlot" value={draftStartSlot} />
-			<input type="hidden" name="entries" value={JSON.stringify(draft)} />
-			<button type="submit" class="btn-confirm">Plan bestätigen</button>
-		</form>
+<!-- Stats dialog (mobile popup for plant + macro bars) -->
+<dialog bind:this={statsDialog} class="stats-dialog">
+	<div class="stats-dialog-header">
+		<h2>Statistik</h2>
+		<button type="button" class="stats-close" onclick={() => statsDialog?.close()}>✕</button>
 	</div>
-{/if}
+	{#if draft === null}
+		{@const pct = Math.min(data.plantCount / data.plantGoal, 1)}
+		{@const full = data.plantCount >= data.plantGoal}
+		<div class="stats-dialog-body">
+			<div class="plant-bar">
+				<div class="plant-bar-header">
+					<span class="plant-bar-label">Pflanzliche Vielfalt</span>
+					<span class="plant-bar-count" class:plant-full={full}>
+						{#if full}🎉{:else}🌱{/if}
+						{data.plantCount} / {data.plantGoal}
+					</span>
+				</div>
+				<div class="plant-track">
+					<div class="plant-fill" style="width: {pct * 100}%" class:plant-fill-full={full}></div>
+				</div>
+			</div>
+
+			{#if data.nutrientSummary.totalMealsWithRecipe > 0}
+				{@const ns = data.nutrientSummary}
+				<div class="nutrient-bar">
+					<div class="nutrient-bar-header">
+						<span class="nutrient-bar-label">Makronährstoffe</span>
+						<span class="nutrient-bar-detail">{ns.mealsWithData} / {ns.totalMealsWithRecipe} Mahlzeiten mit Daten</span>
+					</div>
+					{#if ns.hasData && ns.actualCarbsPct !== null}
+						{@const carbs = Math.round(ns.actualCarbsPct * 100)}
+						{@const fat   = Math.round((ns.actualFatPct ?? 0) * 100)}
+						{@const prot  = Math.round((ns.actualProteinPct ?? 0) * 100)}
+						<div class="macro-rows">
+							<div class="macro-row">
+								<span class="macro-name">Kohlenhydrate</span>
+								<div class="macro-bars">
+									<div class="macro-track"><div class="macro-seg macro-carbs" style="width: {carbs}%"></div></div>
+									<div class="macro-track macro-track-ideal"><div class="macro-seg macro-carbs" style="width: 50%"></div></div>
+								</div>
+								<span class="macro-pct">{carbs}% <span class="macro-ideal">/ 50%</span></span>
+							</div>
+							<div class="macro-row">
+								<span class="macro-name">Fett</span>
+								<div class="macro-bars">
+									<div class="macro-track"><div class="macro-seg macro-fat" style="width: {fat}%"></div></div>
+									<div class="macro-track macro-track-ideal"><div class="macro-seg macro-fat" style="width: 30%"></div></div>
+								</div>
+								<span class="macro-pct">{fat}% <span class="macro-ideal">/ 30%</span></span>
+							</div>
+							<div class="macro-row">
+								<span class="macro-name">Protein</span>
+								<div class="macro-bars">
+									<div class="macro-track"><div class="macro-seg macro-protein" style="width: {prot}%"></div></div>
+									<div class="macro-track macro-track-ideal"><div class="macro-seg macro-protein" style="width: 20%"></div></div>
+								</div>
+								<span class="macro-pct">{prot}% <span class="macro-ideal">/ 20%</span></span>
+							</div>
+						</div>
+						<p class="nutrient-kcal">{ns.totalKcal} kcal total (Plan)</p>
+					{:else}
+						<p class="nutrient-insufficient">Zu wenige Rezepte mit Nährwertdaten — bitte Rezepte ergänzen.</p>
+					{/if}
+				</div>
+			{/if}
+		</div>
+	{:else}
+		<div class="stats-dialog-body">
+			<p class="nutrient-insufficient">Statistik ist während eines aktiven Vorschlags nicht verfügbar.</p>
+		</div>
+	{/if}
+</dialog>
 
 <!-- Entry popup (fixed, outside all overflow containers) -->
 {#if editingPopup}
@@ -1110,11 +1202,18 @@
 		font-size: 0.825rem;
 		font-family: inherit;
 		background: none;
-		border: none;
-		padding: 0;
+		border: 1.5px solid var(--green);
+		border-radius: var(--radius);
+		padding: 0.35rem 0.875rem;
 		color: var(--green);
 		cursor: pointer;
-		text-decoration: underline;
+		font-weight: 500;
+		transition: background 0.15s, color 0.15s;
+	}
+
+	.btn-replan:hover {
+		background: var(--green);
+		color: white;
 	}
 
 	.btn-open-modal {
@@ -1148,20 +1247,28 @@
 	}
 
 	.btn-nav {
-		background: none;
-		border: 1px solid var(--border-strong);
-		border-radius: var(--radius);
-		padding: 0.3rem 0.7rem;
-		font-size: 1.1rem;
-		font-family: inherit;
-		color: var(--text);
-		cursor: pointer;
-		line-height: 1;
-		transition: background 0.15s;
+		display: none;
 	}
 
-	.btn-nav:hover {
-		background: var(--surface);
+	@media (min-width: 768px) {
+		.btn-nav {
+			display: inline-flex;
+			align-items: center;
+			background: none;
+			border: 1px solid var(--border-strong);
+			border-radius: var(--radius);
+			padding: 0.3rem 0.7rem;
+			font-size: 1.1rem;
+			font-family: inherit;
+			color: var(--text);
+			cursor: pointer;
+			line-height: 1;
+			transition: background 0.15s;
+		}
+
+		.btn-nav:hover {
+			background: var(--surface);
+		}
 	}
 
 	.btn-today {
@@ -1316,7 +1423,7 @@
 	.entry-input {
 		width: 100%;
 		padding: 0.35rem 0.5rem;
-		font-size: 0.875rem;
+		font-size: 1rem; /* ≥16px prevents Safari auto-zoom on focus */
 		font-family: inherit;
 		border: 1.5px solid var(--border-strong);
 		border-radius: var(--radius);
@@ -1358,26 +1465,37 @@
 		cursor: pointer;
 	}
 
-	/* ── Slide wrapper ── */
-	.slide-wrapper {
+	/* ── Mobile plan layout: fills viewport between top bar and tab bar ── */
+	.plan-page {
+		display: flex;
+		flex-direction: column;
+		position: fixed;
+		top: calc(var(--nav-h) + env(safe-area-inset-top, 0px));
+		left: 0;
+		right: 0;
+		bottom: env(safe-area-inset-bottom, 0px);
 		overflow: hidden;
-		width: 100%;
+		background: var(--bg);
+		z-index: 1;
 	}
 
-	.mobile-track {
-		/* height set by JS; cards stack naturally */
+	.plan-upper {
+		flex-shrink: 0;
+		padding: 1rem 1rem 0;
+	}
+
+	/* ── Slide wrapper: free-scrolling day list ── */
+	.slide-wrapper {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
+		padding: 0 0.5rem 0.5rem;
 	}
 
 	/* ── Mobile day cards ── */
 	.day-cards {
-		display: flex;
-		flex-direction: column;
-		gap: 3px;
-		border: 1.5px solid var(--border-strong);
-		border-radius: 18px;
-		overflow: hidden;
-		box-shadow: var(--shadow-md);
-		background: var(--border-strong);
+		display: contents;
 	}
 
 	.plan-grid {
@@ -1388,16 +1506,10 @@
 		display: flex;
 		flex-direction: row;
 		background: var(--surface);
-	}
-
-	.day-card:first-child {
-		border-radius: 16px 16px 0 0;
 		overflow: hidden;
-	}
-
-	.day-card:last-child {
-		border-radius: 0 0 16px 16px;
-		overflow: hidden;
+		margin-bottom: 0.5rem;
+		border-radius: var(--radius);
+		box-shadow: var(--shadow);
 	}
 
 	/* Rotated date sidebar — reads bottom to top */
@@ -1437,7 +1549,7 @@
 		display: flex;
 		align-items: flex-start;
 		gap: 0.5rem;
-		padding: 0.35rem 0.65rem;
+		padding: 0.5rem 0.65rem;
 		border-bottom: 1px solid var(--border);
 	}
 
@@ -1468,10 +1580,75 @@
 		padding: 0.1rem 0.25rem;
 	}
 
-	/* ── Confirm bar (sticky bottom) ── */
+	/* Plant + nutrient bars: only shown on desktop (mobile uses stats dialog) */
+	.stats-desktop-section {
+		display: none;
+	}
+
+	.pager-right {
+		margin-left: auto;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	/* Stats button: visible on mobile, hidden on desktop */
+	.btn-stats {
+		font-size: 0.8rem;
+		font-family: inherit;
+		background: none;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius);
+		padding: 0.3rem 0.65rem;
+		color: var(--text-muted);
+		cursor: pointer;
+		transition: background 0.15s, color 0.15s;
+	}
+
+	.btn-stats:hover {
+		background: var(--surface);
+		color: var(--text);
+	}
+
+	/* ── Stats dialog ── */
+	.stats-dialog {
+		border: none;
+		border-radius: var(--radius-lg);
+		box-shadow: 0 8px 32px rgba(42, 37, 32, 0.18);
+		padding: 0;
+		width: min(400px, 94vw);
+		max-height: 80vh;
+		overflow-y: auto;
+	}
+
+	.stats-dialog::backdrop {
+		background: rgba(42, 37, 32, 0.45);
+	}
+
+	.stats-dialog-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 1rem 1.25rem 0.75rem;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.stats-close {
+		background: none;
+		border: none;
+		font-size: 1rem;
+		color: var(--text-muted);
+		cursor: pointer;
+		padding: 0.25rem;
+	}
+
+	.stats-dialog-body {
+		padding: 1rem 1.25rem;
+	}
+
+	/* ── Confirm bar (flex child at bottom of plan-page on mobile) ── */
 	.confirm-bar {
-		position: sticky;
-		bottom: var(--tab-h);
+		flex-shrink: 0;
 		z-index: 10;
 		display: flex;
 		align-items: center;
@@ -1480,7 +1657,6 @@
 		background: var(--surface);
 		border-top: 1px solid var(--border);
 		padding: 0.875rem 1rem;
-		margin-top: 1.5rem;
 		box-shadow: 0 -2px 8px rgba(42, 37, 32, 0.08);
 	}
 
@@ -1667,8 +1843,38 @@
 
 	/* ── Desktop grid ── */
 	@media (min-width: 768px) {
+		/* Reset mobile fixed layout */
+		.plan-page {
+			position: static;
+			display: block;
+			overflow: visible;
+			background: transparent;
+		}
+
+		.plan-upper {
+			padding: 0;
+		}
+
 		.slide-wrapper {
 			display: none;
+		}
+
+		/* Show desktop stats section */
+		.stats-desktop-section {
+			display: block;
+		}
+
+		/* Hide stats button on desktop */
+		.btn-stats {
+			display: none;
+		}
+
+		/* Restore sticky confirm bar on desktop */
+		.confirm-bar {
+			position: sticky;
+			bottom: 0;
+			margin-top: 1.5rem;
+			border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 		}
 
 		.plan-grid {
@@ -1859,10 +2065,6 @@
 			padding: 0.35rem 0.4rem;
 		}
 
-		.confirm-bar {
-			bottom: 0;
-			border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-		}
 	}
 
 	/* ── Network error banner ── */

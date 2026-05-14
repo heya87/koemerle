@@ -2,6 +2,7 @@
 	import '../app.css';
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import type { LayoutData } from './$types';
 	import favicon from '$lib/assets/favicon.svg';
 
@@ -13,6 +14,12 @@
 	let newGroupKeys = $state('');
 	let importResult: { imported: number; skipped: number } | null = $state(null);
 	let selectedFileName = $state('');
+	let mobileMenuOpen = $state(false);
+
+	$effect(() => {
+		page.url.pathname;
+		mobileMenuOpen = false;
+	});
 
 	function openSettings() {
 		newGroupLabel = '';
@@ -31,13 +38,14 @@
 
 {#if data.user}
 	<header class="top-bar">
+	<div class="top-bar-inner">
 		<span class="brand">Kömerle</span>
 		<nav class="desktop-nav">
-			<a href="/plan">Wochenplan</a>
-			<a href="/recipes">Rezepte</a>
-			<a href="/basket">Gemüsekorb</a>
-			<a href="/fridge">Kühlschrank</a>
-			<a href="/shopping">Einkaufen</a>
+			<a href="/plan" class:active={page.url.pathname.startsWith('/plan')}>Wochenplan</a>
+			<a href="/recipes" class:active={page.url.pathname.startsWith('/recipes')}>Rezepte</a>
+			<a href="/basket" class:active={page.url.pathname.startsWith('/basket')}>Gemüsekorb</a>
+			<a href="/fridge" class:active={page.url.pathname.startsWith('/fridge')}>Kühlschrank</a>
+			<a href="/shopping" class:active={page.url.pathname.startsWith('/shopping')}>Einkaufen</a>
 		</nav>
 		<div class="user-area">
 			<span class="username">{data.user.name}</span>
@@ -46,7 +54,30 @@
 				<button type="submit" class="btn-logout">Abmelden</button>
 			</form>
 		</div>
+		<div class="mobile-header-right">
+			<span class="username">{data.user.name}</span>
+			<button class="btn-hamburger" type="button" onclick={() => (mobileMenuOpen = !mobileMenuOpen)} aria-label="Menü">
+				<span class="ham-lines"><span></span><span></span><span></span></span>
+			</button>
+		</div>
+	</div>
 	</header>
+
+	{#if mobileMenuOpen}
+		<div class="mobile-menu-backdrop" onclick={() => (mobileMenuOpen = false)}></div>
+		<nav class="mobile-menu">
+			<a href="/plan" class:active={page.url.pathname.startsWith('/plan')}>Wochenplan</a>
+			<a href="/recipes" class:active={page.url.pathname.startsWith('/recipes')}>Rezepte</a>
+			<a href="/basket" class:active={page.url.pathname.startsWith('/basket')}>Gemüsekorb</a>
+			<a href="/fridge" class:active={page.url.pathname.startsWith('/fridge')}>Kühlschrank</a>
+			<a href="/shopping" class:active={page.url.pathname.startsWith('/shopping')}>Einkaufen</a>
+			<div class="mobile-menu-sep"></div>
+			<button type="button" onclick={() => { mobileMenuOpen = false; openSettings(); }}>Einstellungen</button>
+			<form method="post" action="/logout" use:enhance>
+				<button type="submit" class="menu-logout">Abmelden</button>
+			</form>
+		</nav>
+	{/if}
 
 	<dialog bind:this={settingsDialog} class="settings-dialog">
 		<div class="settings-content">
@@ -266,11 +297,11 @@
 	</dialog>
 
 	<nav class="tab-bar">
-		<a href="/plan">Wochenplan</a>
-		<a href="/recipes">Rezepte</a>
-		<a href="/basket">Gemüsekorb</a>
-		<a href="/fridge">Kühlschrank</a>
-		<a href="/shopping">Einkaufen</a>
+		<a href="/plan" class:active={page.url.pathname.startsWith('/plan')}>Wochenplan</a>
+		<a href="/recipes" class:active={page.url.pathname.startsWith('/recipes')}>Rezepte</a>
+		<a href="/basket" class:active={page.url.pathname.startsWith('/basket')}>Gemüsekorb</a>
+		<a href="/fridge" class:active={page.url.pathname.startsWith('/fridge')}>Kühlschrank</a>
+		<a href="/shopping" class:active={page.url.pathname.startsWith('/shopping')}>Einkaufen</a>
 	</nav>
 {/if}
 
@@ -284,12 +315,17 @@
 		position: sticky;
 		top: 0;
 		z-index: 20;
-		height: var(--nav-h);
+		padding-top: env(safe-area-inset-top, 0px);
 		background: var(--surface);
 		border-bottom: 1px solid var(--border);
+	}
+
+	.top-bar-inner {
+		height: var(--nav-h);
 		display: flex;
 		align-items: center;
-		padding: 0 1rem;
+		padding-left: 1rem;
+		padding-right: 1rem;
 		gap: 1rem;
 	}
 
@@ -306,10 +342,100 @@
 	}
 
 	.user-area {
+		display: none;
+	}
+
+	.mobile-header-right {
 		margin-left: auto;
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
+		height: var(--nav-h);
+	}
+
+	.btn-hamburger {
+		background: none;
+		border: none;
+		cursor: pointer;
+		padding: 0 0.35rem;
+		display: flex;
+		align-items: center;
+		height: 100%;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.ham-lines {
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: 5px;
+		width: 22px;
+		height: 16px;
+	}
+
+	.ham-lines span {
+		display: block;
+		width: 22px;
+		height: 2px;
+		background: var(--text);
+		border-radius: 1px;
+	}
+
+	.mobile-menu-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 18;
+	}
+
+	.mobile-menu {
+		position: fixed;
+		top: calc(var(--nav-h) + env(safe-area-inset-top, 0px));
+		left: 0;
+		right: 0;
+		z-index: 19;
+		background: var(--surface);
+		border-bottom: 1px solid var(--border-strong);
+		box-shadow: 0 4px 20px rgba(42, 37, 32, 0.14);
+	}
+
+	.mobile-menu a,
+	.mobile-menu button[type='button'],
+	.menu-logout {
+		display: block;
+		width: 100%;
+		padding: 1rem 1.25rem;
+		font-size: 0.975rem;
+		font-family: inherit;
+		text-decoration: none;
+		color: var(--text);
+		border: none;
+		border-bottom: 1px solid var(--border);
+		background: none;
+		text-align: left;
+		cursor: pointer;
+		box-sizing: border-box;
+		transition: background 0.12s;
+	}
+
+	.mobile-menu a:hover,
+	.mobile-menu button[type='button']:hover,
+	.menu-logout:hover {
+		background: var(--bg);
+	}
+
+	.mobile-menu a.active {
+		color: white;
+		font-weight: 600;
+		background: var(--green);
+	}
+
+	.mobile-menu-sep {
+		height: 1px;
+		background: var(--border-strong);
+	}
+
+	.mobile-menu form {
+		display: block;
 	}
 
 	.username {
@@ -668,33 +794,9 @@
 		color: var(--green);
 	}
 
-	/* ── Bottom tab bar (mobile) ── */
+	/* ── Bottom tab bar: hidden on mobile (replaced by hamburger) ── */
 	.tab-bar {
-		position: fixed;
-		bottom: 0;
-		left: 0;
-		right: 0;
-		z-index: 20;
-		height: var(--tab-h);
-		background: var(--surface);
-		border-top: 1px solid var(--border);
-		display: flex;
-	}
-
-	.tab-bar a {
-		flex: 1;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		text-decoration: none;
-		font-size: 0.8rem;
-		font-weight: 500;
-		color: var(--text-muted);
-		transition: color 0.15s;
-	}
-
-	.tab-bar a:hover {
-		color: var(--green);
+		display: none;
 	}
 
 	/* ── Main content ── */
@@ -706,14 +808,25 @@
 	}
 
 	main.with-tabs {
-		padding-bottom: calc(var(--tab-h) + 1.25rem);
+		padding-bottom: 1.25rem;
 	}
 
 	/* ── Desktop ── */
 	@media (min-width: 768px) {
-		.top-bar {
+		.top-bar-inner {
 			padding: 0 2rem;
 			gap: 2rem;
+		}
+
+		.user-area {
+			margin-left: auto;
+			display: flex;
+			align-items: center;
+			gap: 0.75rem;
+		}
+
+		.mobile-header-right {
+			display: none;
 		}
 
 		.desktop-nav {
@@ -731,6 +844,11 @@
 
 		.desktop-nav a:hover {
 			color: var(--text);
+		}
+
+		.desktop-nav a.active {
+			color: var(--text);
+			font-weight: 600;
 		}
 
 		.tab-bar {

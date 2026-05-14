@@ -70,7 +70,7 @@ export const activityLog = pgTable('activity_log', {
 // Equivalence groups for ingredient matching.
 export const ingredientGroups = pgTable('ingredient_groups', {
 	id: serial('id').primaryKey(),
-	label: text('label').notNull(),
+	label: text('label').notNull().unique(),
 	matchKeys: text('match_keys').array().notNull().default([])
 });
 
