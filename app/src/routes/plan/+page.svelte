@@ -255,6 +255,7 @@
 	// ── Drag & drop ──
 	let dragFrom: { date: string; slot: Slot; course: Course } | null = $state(null);
 	let dragOverKey: string | null = $state(null);
+	let moveFrom: { date: string; slot: Slot; course: Course } | null = $state(null);
 
 	function onDragStart(e: DragEvent, date: string, slot: Slot, course: Course) {
 		dragFrom = { date, slot, course };
@@ -274,14 +275,8 @@
 		}
 	}
 
-	async function onDrop(e: DragEvent, toDate: string, toSlot: Slot, toCourse: Course) {
-		e.preventDefault();
-		dragOverKey = null;
-		if (!dragFrom) return;
-		const { date: fromDate, slot: fromSlot, course: fromCourse } = dragFrom;
-		dragFrom = null;
+	async function swapSlots(fromDate: string, fromSlot: Slot, fromCourse: Course, toDate: string, toSlot: Slot, toCourse: Course) {
 		if (fromDate === toDate && fromSlot === toSlot && fromCourse === toCourse) return;
-
 		if (draft !== null) {
 			const fromIdx = draft.findIndex((e) => e.date === fromDate && e.slot === fromSlot && e.course === fromCourse);
 			const toIdx = draft.findIndex((e) => e.date === toDate && e.slot === toSlot && e.course === toCourse);
@@ -302,6 +297,22 @@
 			await fetch('?/moveSlot', { method: 'POST', body: fd });
 			await invalidateAll();
 		}
+	}
+
+	async function onDrop(e: DragEvent, toDate: string, toSlot: Slot, toCourse: Course) {
+		e.preventDefault();
+		dragOverKey = null;
+		if (!dragFrom) return;
+		const { date: fromDate, slot: fromSlot, course: fromCourse } = dragFrom;
+		dragFrom = null;
+		await swapSlots(fromDate, fromSlot, fromCourse, toDate, toSlot, toCourse);
+	}
+
+	async function doMoveSwap(date: string, slot: Slot, course: Course) {
+		if (!moveFrom) return;
+		const { date: fromDate, slot: fromSlot, course: fromCourse } = moveFrom;
+		moveFrom = null;
+		await swapSlots(fromDate, fromSlot, fromCourse, date, slot, course);
 	}
 
 	function onDragEnd() {
@@ -329,13 +340,18 @@
 	{@const entry = getEntry(date, slot, course)}
 	{@const key = entryKey(date, slot, course)}
 	{@const isDragging = dragFrom?.date === date && dragFrom?.slot === slot && dragFrom?.course === course}
+	{@const isMoveSource = moveFrom?.date === date && moveFrom?.slot === slot && moveFrom?.course === course}
+	{@const inMoveMode = moveFrom !== null}
 	<div
 		class="course-row"
 		class:is-side={course === 'side'}
 		class:drag-over={dragOverKey === key}
+		class:move-source={isMoveSource}
+		class:move-target={inMoveMode && !isMoveSource}
 		ondragover={(e) => onDragOver(e, date, slot, course)}
 		ondragleave={onDragLeave}
 		ondrop={(e) => onDrop(e, date, slot, course)}
+		onclick={inMoveMode && !isMoveSource ? () => doMoveSwap(date, slot, course) : undefined}
 	>
 		{#if entry}
 			<span
@@ -356,8 +372,19 @@
 					{entryLabel(entry)}
 				{/if}
 			</span>
+			<button
+				class="btn-move-entry"
+				class:btn-layout-hidden={inMoveMode && !isMoveSource}
+				title={isMoveSource ? 'Abbrechen' : 'Verschieben'}
+				onclick={(e) => { e.stopPropagation(); if (isMoveSource) moveFrom = null; else moveFrom = { date, slot, course }; }}
+			><span class="swap-icon">{isMoveSource ? '✕' : '⇄'}</span></button>
 			{#if draft !== null}
-				<button class="btn-clear-entry" title="Entfernen" onclick={() => removeDraftEntry(date, slot, course)}>✕</button>
+				<button
+					class="btn-clear-entry"
+					class:btn-layout-hidden={inMoveMode}
+					title="Entfernen"
+					onclick={() => removeDraftEntry(date, slot, course)}
+				>✕</button>
 			{:else}
 				<form method="post" action="?/clearSlot" use:enhance={() => async ({ result, update }) => {
 						if (result.type === 'error') { networkError = 'Verbindungsfehler – bitte erneut versuchen.'; return; }
@@ -366,7 +393,7 @@
 					<input type="hidden" name="date" value={date} />
 					<input type="hidden" name="slot" value={slot} />
 					<input type="hidden" name="course" value={course} />
-					<button type="submit" class="btn-clear-entry" title="Leeren">✕</button>
+					<button type="submit" class="btn-clear-entry" class:btn-layout-hidden={inMoveMode} title="Leeren">✕</button>
 				</form>
 			{/if}
 		{:else}
@@ -374,10 +401,16 @@
 				class="btn-add-entry"
 				class:btn-add-side={course === 'side'}
 				class:is-editing={editing === key}
-				onclick={(e) => openEditing(date, slot, course, (e.currentTarget as HTMLElement).closest('.day-slot-cell, .slot-courses') ?? e.currentTarget as HTMLElement)}
-				disabled={draft === null && !data.meta}
+				class:move-empty-target={inMoveMode}
+				onclick={(e) => {
+					if (inMoveMode) { e.stopPropagation(); doMoveSwap(date, slot, course); }
+					else openEditing(date, slot, course, (e.currentTarget as HTMLElement).closest('.day-slot-cell, .slot-courses') ?? e.currentTarget as HTMLElement);
+				}}
+				disabled={!inMoveMode && draft === null && !data.meta}
 			>
-				{#if draft === null && !data.meta}
+				{#if inMoveMode}
+					hierhin
+				{:else if draft === null && !data.meta}
 					{course === 'main' ? '—' : ''}
 				{:else if course === 'side'}
 					+ Beilage
@@ -1293,7 +1326,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0.4rem;
-		min-height: 1.8rem;
+		min-height: 2.75rem;
 		border-radius: var(--radius);
 		transition: background 0.1s;
 		padding: 0.1rem 0.25rem;
@@ -1354,9 +1387,10 @@
 		border: none;
 		color: var(--text-light);
 		cursor: pointer;
-		font-size: 0.75rem;
-		padding: 0.2rem 0.4rem;
+		font-size: 1rem;
+		padding: 0.3rem 0.5rem;
 		border-radius: 4px;
+		-webkit-text-stroke: 0.5px currentColor;
 		transition: color 0.15s, background 0.15s;
 		flex-shrink: 0;
 	}
@@ -1376,7 +1410,8 @@
 		cursor: pointer;
 		font-family: inherit;
 		transition: border-color 0.15s, color 0.15s;
-		min-height: 2rem;
+		min-height: 2.75rem;
+		width: 100%;
 	}
 
 	.btn-add-entry:hover:not(:disabled) {
@@ -2039,6 +2074,11 @@
 			font-size: 0.75rem;
 			padding: 0.2rem 0.4rem;
 			text-align: left;
+			min-height: unset;
+		}
+
+		.day-slot-cell .course-row {
+			min-height: unset;
 		}
 
 		.day-slot-cell .btn-add-side {
@@ -2135,5 +2175,62 @@
 	.recipe-option:hover {
 		background: var(--green-light);
 		color: var(--green-dark);
+	}
+
+	/* ── Move button (mobile only) ── */
+	.btn-move-entry {
+		background: none;
+		border: none;
+		color: var(--text-light);
+		cursor: pointer;
+		font-size: 1rem;
+		padding: 0.3rem 0.5rem;
+		border-radius: 4px;
+		transition: color 0.15s, background 0.15s;
+		flex-shrink: 0;
+	}
+
+	.swap-icon {
+		font-size: 1.15em;
+		-webkit-text-stroke: 0.5px currentColor;
+	}
+
+	.btn-move-entry:hover {
+		color: var(--green);
+		background: var(--green-light);
+	}
+
+	@media (min-width: 768px) {
+		.btn-move-entry {
+			display: none;
+		}
+	}
+
+	.btn-layout-hidden {
+		visibility: hidden;
+		pointer-events: none;
+	}
+
+	/* ── Move mode ── */
+	.course-row.move-source {
+		background: var(--green-light);
+		outline: 1.5px solid var(--green);
+		border-radius: var(--radius);
+	}
+
+	.course-row.move-target {
+		cursor: pointer;
+		background: color-mix(in srgb, var(--green-light) 40%, transparent);
+		border-radius: var(--radius);
+	}
+
+	.course-row.move-target:hover {
+		background: var(--green-light);
+	}
+
+	.btn-add-entry.move-empty-target {
+		border-color: var(--green);
+		color: var(--green);
+		opacity: 1;
 	}
 </style>
