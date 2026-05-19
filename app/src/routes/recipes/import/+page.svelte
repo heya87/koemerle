@@ -78,11 +78,26 @@
 							<form method="post" action="?/preview" use:enhance>
 								<input type="hidden" name="url" value={result.url} />
 								<input type="hidden" name="query" value={form.query} />
+								<input type="hidden" name="page" value={form.page ?? 0} />
 								<button type="submit" class="result-btn">{result.name}</button>
 							</form>
 						</li>
 					{/each}
 				</ul>
+
+				<div class="pagination">
+					<form method="post" action="?/search" use:enhance style:visibility={(form.page ?? 0) > 0 ? 'visible' : 'hidden'}>
+						<input type="hidden" name="query" value={form.query} />
+						<input type="hidden" name="page" value={(form.page ?? 0) - 1} />
+						<button type="submit" class="btn-page">← Zurück</button>
+					</form>
+					<span class="page-info">Seite {(form.page ?? 0) + 1} von {form.totalPages ?? 1}</span>
+					<form method="post" action="?/search" use:enhance style:visibility={(form.page ?? 0) + 1 < (form.totalPages ?? 1) ? 'visible' : 'hidden'}>
+						<input type="hidden" name="query" value={form.query} />
+						<input type="hidden" name="page" value={(form.page ?? 0) + 1} />
+						<button type="submit" class="btn-page">Weiter →</button>
+					</form>
+				</div>
 			{/if}
 		{/if}
 	</div>
@@ -221,6 +236,40 @@
 		background: var(--green);
 		color: white;
 		border-color: var(--green);
+	}
+
+	.pagination {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.75rem;
+		padding-top: 0.75rem;
+		border-top: 1px solid var(--border);
+	}
+
+	.page-info {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		flex: 1;
+		text-align: center;
+	}
+
+	.btn-page {
+		font-size: 0.8rem;
+		font-family: inherit;
+		padding: 0.3rem 0.65rem;
+		background: none;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		color: var(--text-muted);
+		cursor: pointer;
+		white-space: nowrap;
+		transition: color 0.15s, border-color 0.15s;
+	}
+
+	.btn-page:hover {
+		color: var(--text);
+		border-color: var(--text-muted);
 	}
 
 	/* Results list */

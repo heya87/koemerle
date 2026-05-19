@@ -1,6 +1,7 @@
 /**
  * Seeds default ingredient groups and plant foods.
- * Safe to re-run — uses onConflictDoNothing.
+ * Ingredient groups are only inserted on a fresh install (empty table) — users manage them via UI.
+ * Plant foods use onConflictDoNothing on the unique matchKey.
  * Called automatically by db:clean and on deploy (Dockerfile CMD).
  */
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -13,12 +14,15 @@ if (!DATABASE_URL) throw new Error('DATABASE_URL is not set');
 const client = postgres(DATABASE_URL);
 const db = drizzle(client);
 
-await db.insert(ingredientGroups).values([
-	{ label: 'Karotte / Rüebli', matchKeys: ['rüebli', 'rüben', 'karotte'] },
-	{ label: 'Zucchini',         matchKeys: ['zucchini', 'zucchetti'] },
-	{ label: 'Peperoni',         matchKeys: ['peperoni', 'paprika'] },
-	{ label: 'Randen',           matchKeys: ['randen', 'rote bete'] },
-]).onConflictDoNothing();
+const existingGroups = await db.select({ id: ingredientGroups.id }).from(ingredientGroups).limit(1);
+if (existingGroups.length === 0) {
+	await db.insert(ingredientGroups).values([
+		{ label: 'Karotte / Rüebli', matchKeys: ['rüebli', 'rüben', 'karotte'] },
+		{ label: 'Zucchini',         matchKeys: ['zucchini', 'zucchetti'] },
+		{ label: 'Peperoni',         matchKeys: ['peperoni', 'paprika'] },
+		{ label: 'Randen',           matchKeys: ['randen', 'rote bete'] },
+	]);
+}
 
 await db.insert(plantFoods).values([
 	{ matchKey: 'karotte',          label: 'Karotte' },
@@ -146,5 +150,5 @@ await db.insert(plantFoods).values([
 	{ matchKey: 'chiasamen',        label: 'Chiasamen' },
 ]).onConflictDoNothing();
 
-console.log('Default data seeded.');
+console.log('Seed-defaults done.');
 await client.end();

@@ -2,7 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { recipes, basketItems } from '$lib/server/db/schema';
-import { searchFooby, fetchFoobyRecipe } from '$lib/server/fooby';
+import { searchFooby, fetchFoobyRecipe, type FoobySearchResult } from '$lib/server/fooby';
 import { generateMatchKeys, getWeekStart } from '$lib/server/ingredients';
 import { eq } from 'drizzle-orm';
 
@@ -23,10 +23,12 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const query = formData.get('query')?.toString().trim() ?? '';
 		if (!query) return fail(400, { message: 'Suchbegriff eingeben' });
+		const page = Math.max(0, parseInt(formData.get('page')?.toString() ?? '0') || 0);
 
 		try {
-			const results = await searchFooby(query);
-			return { results, query };
+			const { results, total } = await searchFooby(query, page);
+			const totalPages = Math.ceil(total / 10);
+			return { results, query, page, totalPages };
 		} catch {
 			return fail(500, { message: 'Fooby-Suche fehlgeschlagen' });
 		}
@@ -38,12 +40,16 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const url = formData.get('url')?.toString() ?? '';
 		const query = formData.get('query')?.toString() ?? '';
+		const page = Math.max(0, parseInt(formData.get('page')?.toString() ?? '0') || 0);
 
 		// Re-fetch search results so the left panel stays populated
-		let results = [];
+		let results: FoobySearchResult[] = [];
+		let totalPages = 0;
 		if (query) {
 			try {
-				results = await searchFooby(query);
+				const r = await searchFooby(query, page);
+				results = r.results;
+				totalPages = Math.ceil(r.total / 10);
 			} catch {
 				// ignore — left panel just stays empty
 			}
@@ -51,10 +57,10 @@ export const actions: Actions = {
 
 		try {
 			const preview = await fetchFoobyRecipe(url);
-			return { results, query, preview };
+			return { results, query, page, totalPages, preview };
 		} catch (e) {
 			console.error('fetchFoobyRecipe error:', e);
-			return fail(500, { message: String(e), results, query });
+			return fail(500, { message: String(e), results, query, page, totalPages });
 		}
 	},
 

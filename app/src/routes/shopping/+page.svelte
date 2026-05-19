@@ -4,8 +4,17 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	// Track which list each item is assigned to (default: first list)
 	let assignments = $state<Record<string, string>>({});
+	let locallyExcluded = $state(new Set<number>());
+	let networkError = $state<string | null>(null);
+
+	let sessionDateStart = $state(data.session?.planStart ?? '');
+	let sessionDateEnd = $state(data.session?.planEnd ?? '');
+
+	$effect(() => {
+		sessionDateStart = data.session?.planStart ?? '';
+		sessionDateEnd = data.session?.planEnd ?? '';
+	});
 
 	function getListId(itemText: string): string {
 		return assignments[itemText] ?? data.bringLists[0]?.id ?? '';
@@ -22,11 +31,8 @@
 		if (other) assignments[itemText] = other.id;
 	}
 
+	let visibleItems = $derived(data.items.filter((item) => !locallyExcluded.has(item.id)));
 	let assignmentsJson = $derived(JSON.stringify(assignments));
-
-	let removed = $state(new Set<string>());
-	let visibleList = $derived(data.shoppingList.filter((item) => !removed.has(item.matchKey)));
-	let networkError = $state<string | null>(null);
 
 	function formatDate(iso: string): string {
 		const [y, m, d] = iso.split('-');
@@ -43,53 +49,162 @@
 
 <div class="page-header">
 	<h1>Einkaufsliste</h1>
-	<span class="week-label">Woche ab {formatDate(data.weekStart)}</span>
-</div>
-
-<div class="shopping-card">
-	{#if visibleList.length === 0}
-		<p class="empty">Alles da — nichts einzukaufen.</p>
-	{:else}
-		<ul class="item-list">
-			{#each visibleList as item}
-				<li>
-					<span>{item.displayText}</span>
-					<div class="item-actions">
-						{#if data.bringLists.length === 2}
-							<button type="button" class="list-toggle" onclick={() => toggleList(item.displayText)}>
-								{getListName(item.displayText)}
-							</button>
-						{/if}
-						<button type="button" class="btn-remove-item" title="Entfernen" onclick={() => removed = new Set([...removed, item.matchKey])}>✕</button>
-					</div>
-				</li>
-			{/each}
-		</ul>
+	{#if !data.session}
+		<span class="week-label">Woche ab {formatDate(data.weekStart)}</span>
 	{/if}
-
-	<div class="actions">
-		<form method="post" action="?/sendToBring" use:enhance={() => {
-			return async ({ result, update }) => {
-				if (result.type === 'error') {
-					networkError = 'Verbindungsfehler – bitte erneut versuchen.';
-					return;
-				}
-				networkError = null;
-				await update();
-			};
-		}}>
-			<input type="hidden" name="assignments" value={assignmentsJson} />
-			<input type="hidden" name="removed" value={JSON.stringify([...removed])} />
-			<button type="submit" class="btn-bring">An Bring! senden</button>
-		</form>
-		{#if form && 'sent' in form}
-			<p class="success">{form.sent} Artikel hinzugefügt.</p>
-		{/if}
-		{#if form && 'message' in form}
-			<p class="error">{form.message}</p>
-		{/if}
-	</div>
 </div>
+
+{#if !data.session}
+	<div class="shopping-card">
+		<div class="empty-state">
+			{#if form && 'sent' in form}
+				<p class="success">{form.sent} Artikel hinzugefügt.</p>
+			{/if}
+			<form
+				method="post"
+				action="?/createSession"
+				use:enhance={() => {
+					return async ({ result, update }) => {
+						if (result.type === 'error') {
+							networkError = 'Verbindungsfehler – bitte erneut versuchen.';
+							return;
+						}
+						networkError = null;
+						locallyExcluded = new Set();
+						await update();
+					};
+				}}
+			>
+				<div class="date-row">
+					<label>
+						Von
+						<input type="date" name="planStart" value={data.defaultDates?.planStart ?? ''} required />
+					</label>
+					<label>
+						Bis
+						<input type="date" name="planEnd" value={data.defaultDates?.planEnd ?? ''} required />
+					</label>
+				</div>
+				<div>
+					<button type="submit" class="btn-bring">Einkaufsliste erstellen</button>
+				</div>
+			</form>
+			{#if form && 'message' in form}
+				<p class="error">{form.message}</p>
+			{/if}
+		</div>
+	</div>
+{:else}
+	<div class="shopping-card">
+		<div class="session-header">
+			<form
+				method="post"
+				action="?/updateDates"
+				use:enhance={() => {
+					return async ({ update }) => {
+						locallyExcluded = new Set();
+						await update();
+					};
+				}}
+			>
+				<input type="hidden" name="sessionId" value={data.session.id} />
+				<div class="date-row">
+					<label>
+						Von
+						<input type="date" name="planStart" bind:value={sessionDateStart} required />
+					</label>
+					<label>
+						Bis
+						<input type="date" name="planEnd" bind:value={sessionDateEnd} required />
+					</label>
+				</div>
+				<button type="submit" class="btn-refresh">Aktualisieren</button>
+			</form>
+		</div>
+
+		<div class="item-scroll">
+			{#if visibleItems.length === 0}
+				<p class="empty">Alles da — nichts einzukaufen.</p>
+			{:else}
+				<ul class="item-list">
+					{#each visibleItems as item (item.id)}
+						<li>
+							<span>{item.displayText}</span>
+							<div class="item-actions">
+								{#if data.bringLists.length === 2}
+									<button
+										type="button"
+										class="list-toggle"
+										onclick={() => toggleList(item.displayText)}
+									>
+										{getListName(item.displayText)}
+									</button>
+								{/if}
+								<form
+									method="post"
+									action="?/excludeItem"
+									use:enhance={() => {
+										locallyExcluded = new Set([...locallyExcluded, item.id]);
+										return async ({ update }) => update({ reset: false });
+									}}
+								>
+									<input type="hidden" name="itemId" value={item.id} />
+									<button type="submit" class="btn-remove-item" title="Entfernen">✕</button>
+								</form>
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+
+		<div class="actions">
+			{#if form && 'message' in form}
+				<p class="error">{form.message}</p>
+			{/if}
+
+			<div class="actions-spacer"></div>
+
+			<form
+				method="post"
+				action="?/discardSession"
+				use:enhance={() => {
+					return async ({ update }) => update();
+				}}
+			>
+				<input type="hidden" name="sessionId" value={data.session.id} />
+				<button
+					type="submit"
+					class="btn-discard"
+					onclick={(e) => {
+						if (!confirm('Einkaufsliste verwerfen?')) e.preventDefault();
+					}}
+				>
+					Verwerfen
+				</button>
+			</form>
+
+			<form
+				method="post"
+				action="?/sendToBring"
+				use:enhance={() => {
+					return async ({ result, update }) => {
+						if (result.type === 'error') {
+							networkError = 'Verbindungsfehler – bitte erneut versuchen.';
+							return;
+						}
+						networkError = null;
+						await update();
+					};
+				}}
+			>
+				<input type="hidden" name="sessionId" value={data.session.id} />
+				<input type="hidden" name="assignments" value={assignmentsJson} />
+				<button type="submit" class="btn-bring">An Bring! senden</button>
+			</form>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.page-header {
@@ -110,12 +225,77 @@
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow);
 		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+		max-height: calc(100dvh - var(--nav-h) - 6rem);
+	}
+
+	.item-scroll {
+		overflow-y: auto;
+		flex: 1;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	.empty-state {
+		padding: 1.25rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.empty-state form {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+	}
+
+	.session-header {
+		padding: 0.875rem 1rem;
+		border-bottom: 1px solid var(--border);
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.session-header form {
+		display: flex;
+		align-items: flex-end;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.date-row {
+		display: flex;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.date-row label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		font-size: 0.8rem;
+		color: var(--text-muted);
+	}
+
+	.date-row input[type='date'] {
+		font-family: inherit;
+		font-size: 0.9rem;
+		padding: 0.35rem 0.5rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		background: var(--surface);
+		color: var(--text);
 	}
 
 	.empty {
 		color: var(--text-muted);
 		padding: 1.25rem;
 		margin: 0;
+	}
+
+	.empty-state .empty {
+		padding: 0;
 	}
 
 	.item-list {
@@ -132,6 +312,10 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.75rem;
+	}
+
+	.item-list li:last-child {
+		border-bottom: none;
 	}
 
 	.item-actions {
@@ -157,10 +341,6 @@
 		background: #fdf0f0;
 	}
 
-	.item-list li:last-child {
-		border-bottom: none;
-	}
-
 	.list-toggle {
 		font-size: 0.75rem;
 		font-family: inherit;
@@ -182,12 +362,17 @@
 	}
 
 	.actions {
-		padding: 1rem;
-		border-top: 1px solid var(--border);
 		display: flex;
 		align-items: center;
-		gap: 1rem;
+		gap: 0.75rem;
 		flex-wrap: wrap;
+		padding: 0.875rem 1rem;
+		border-top: 1px solid var(--border);
+		flex-shrink: 0;
+	}
+
+	.actions-spacer {
+		flex: 1;
 	}
 
 	.btn-bring {
@@ -205,6 +390,41 @@
 
 	.btn-bring:hover {
 		background: var(--green-dark);
+	}
+
+	.btn-refresh {
+		padding: 0.35rem 0.75rem;
+		font-size: 0.85rem;
+		font-family: inherit;
+		background: none;
+		color: var(--text-muted);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		cursor: pointer;
+		transition: color 0.15s, border-color 0.15s;
+		white-space: nowrap;
+	}
+
+	.btn-refresh:hover {
+		color: var(--text);
+		border-color: var(--text-muted);
+	}
+
+	.btn-discard {
+		padding: 0.6rem 1rem;
+		font-size: 0.9rem;
+		font-family: inherit;
+		background: none;
+		color: var(--text-muted);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		cursor: pointer;
+		transition: color 0.15s, border-color 0.15s;
+	}
+
+	.btn-discard:hover {
+		color: var(--red, #d94f4f);
+		border-color: var(--red, #d94f4f);
 	}
 
 	.success {

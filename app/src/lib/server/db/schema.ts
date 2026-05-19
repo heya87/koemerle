@@ -86,3 +86,19 @@ export const plantFoods = pgTable('plant_foods', {
 	matchKey: text('match_key').notNull().unique(),
 	label: text('label').notNull()
 });
+
+export const shoppingSessions = pgTable('shopping_sessions', {
+	id: serial('id').primaryKey(),
+	createdAt: timestamp('created_at').notNull().defaultNow(),
+	planStart: date('plan_start').notNull(),
+	planEnd: date('plan_end').notNull(),
+	sentAt: timestamp('sent_at')
+});
+
+export const shoppingItems = pgTable('shopping_items', {
+	id: serial('id').primaryKey(),
+	sessionId: integer('session_id').notNull().references(() => shoppingSessions.id, { onDelete: 'cascade' }),
+	displayText: text('display_text').notNull(),
+	matchKey: text('match_key').notNull(),
+	excluded: boolean('excluded').notNull().default(false)
+});

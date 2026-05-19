@@ -23,17 +23,21 @@ export type FoobyRecipe = {
 /**
  * Searches fooby.ch for recipes matching the query.
  */
-export async function searchFooby(query: string): Promise<FoobySearchResult[]> {
+const PAGE_SIZE = 10;
+
+export async function searchFooby(query: string, page = 0): Promise<FoobySearchResult[]> {
 	const url = new URL('https://fooby.ch/hawaii_search.sri');
 	url.searchParams.set('query', query);
 	url.searchParams.set('lang', 'de');
 	url.searchParams.set('treffertyp', 'rezepte');
-	url.searchParams.set('num', '10');
+	url.searchParams.set('num', String(PAGE_SIZE));
+	url.searchParams.set('start', String(page * PAGE_SIZE));
 
 	const res = await fetch(url.toString());
 	if (!res.ok) throw new Error(`Fooby search failed: ${res.status}`);
 
 	const data = await res.json();
+	const total: number = data.resultcounts?.all ?? 0;
 	const results: FoobySearchResult[] = [];
 
 	for (const item of data.results ?? []) {
@@ -45,7 +49,7 @@ export async function searchFooby(query: string): Promise<FoobySearchResult[]> {
 		});
 	}
 
-	return results;
+	return { results, total };
 }
 
 function parseNutrientStr(val: unknown): number | null {
