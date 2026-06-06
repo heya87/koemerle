@@ -9,7 +9,7 @@
 	let { children, data }: { children: any; data: LayoutData } = $props();
 
 	let settingsDialog: HTMLDialogElement | undefined = $state();
-	let activeTab: 'groups' | 'plants' | 'recipes' = $state('groups');
+	let activeTab: 'groups' | 'plants' | 'recipes' | 'cron' = $state('groups');
 	let newGroupLabel = $state('');
 	let newGroupKeys = $state('');
 	let importResult: { imported: number; skipped: number } | null = $state(null);
@@ -44,7 +44,7 @@
 			<a href="/plan" class:active={page.url.pathname.startsWith('/plan')}>Wochenplan</a>
 			<a href="/recipes" class:active={page.url.pathname.startsWith('/recipes')}>Rezepte</a>
 			<a href="/basket" class:active={page.url.pathname.startsWith('/basket')}>Gemüsekorb</a>
-			<a href="/fridge" class:active={page.url.pathname.startsWith('/fridge')}>Kühlschrank</a>
+			<a href="/lager" class:active={page.url.pathname.startsWith('/lager')}>Lager</a>
 			<a href="/shopping" class:active={page.url.pathname.startsWith('/shopping')}>Einkaufen</a>
 		</nav>
 		<div class="user-area">
@@ -69,7 +69,7 @@
 			<a href="/plan" class:active={page.url.pathname.startsWith('/plan')}>Wochenplan</a>
 			<a href="/recipes" class:active={page.url.pathname.startsWith('/recipes')}>Rezepte</a>
 			<a href="/basket" class:active={page.url.pathname.startsWith('/basket')}>Gemüsekorb</a>
-			<a href="/fridge" class:active={page.url.pathname.startsWith('/fridge')}>Kühlschrank</a>
+			<a href="/lager" class:active={page.url.pathname.startsWith('/lager')}>Lager</a>
 			<a href="/shopping" class:active={page.url.pathname.startsWith('/shopping')}>Einkaufen</a>
 			<div class="mobile-menu-sep"></div>
 			<button type="button" onclick={() => { mobileMenuOpen = false; openSettings(); }}>Einstellungen</button>
@@ -105,6 +105,12 @@
 					class:active={activeTab === 'recipes'}
 					onclick={() => { activeTab = 'recipes'; importResult = null; }}
 				>Rezepte</button>
+				<button
+					type="button"
+					class="settings-tab"
+					class:active={activeTab === 'cron'}
+					onclick={() => (activeTab = 'cron')}
+				>Cron</button>
 			</nav>
 
 			{#if activeTab === 'groups'}
@@ -293,6 +299,36 @@
 					</div>
 				</div>
 			{/if}
+			{#if activeTab === 'cron'}
+				<div class="settings-section">
+					<div class="settings-info-box">
+						Automatische Gemüsekorb-Synchronisierungen. Läuft gemäss <code>BASKET_SYNC_CRON</code> (Standard: stündlich montags).
+					</div>
+
+					{#if data.cronRuns.length === 0}
+						<p class="empty-synonyms" style="padding: 0.5rem 0;">Noch keine Läufe aufgezeichnet.</p>
+					{:else}
+						<table class="synonym-table">
+							<thead>
+								<tr>
+									<th>Zeit</th>
+									<th>Ergebnis</th>
+									<th>Detail</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each data.cronRuns as run}
+									<tr>
+										<td class="col-time">{new Date(run.ranAt).toLocaleString('de-CH')}</td>
+										<td><span class="outcome-badge outcome-{run.outcome}">{run.outcome}</span></td>
+										<td class="col-detail">{run.detail ?? ''}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	</dialog>
 
@@ -300,7 +336,7 @@
 		<a href="/plan" class:active={page.url.pathname.startsWith('/plan')}>Wochenplan</a>
 		<a href="/recipes" class:active={page.url.pathname.startsWith('/recipes')}>Rezepte</a>
 		<a href="/basket" class:active={page.url.pathname.startsWith('/basket')}>Gemüsekorb</a>
-		<a href="/fridge" class:active={page.url.pathname.startsWith('/fridge')}>Kühlschrank</a>
+		<a href="/lager" class:active={page.url.pathname.startsWith('/lager')}>Lager</a>
 		<a href="/shopping" class:active={page.url.pathname.startsWith('/shopping')}>Einkaufen</a>
 	</nav>
 {/if}
@@ -793,6 +829,34 @@
 		font-size: 0.875rem;
 		color: var(--green);
 	}
+
+	.col-time {
+		white-space: nowrap;
+		font-size: 0.8rem;
+		color: var(--text-muted);
+	}
+
+	.col-detail {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		word-break: break-word;
+		max-width: 16rem;
+	}
+
+	.outcome-badge {
+		display: inline-block;
+		font-size: 0.72rem;
+		font-weight: 600;
+		padding: 0.15rem 0.45rem;
+		border-radius: 4px;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+
+	.outcome-imported { background: #e6f4ea; color: #2e7d32; }
+	.outcome-already_done { background: #f0f4ff; color: #3949ab; }
+	.outcome-no_delivery { background: #fff8e1; color: #f57f17; }
+	.outcome-error { background: #fdf0f0; color: var(--red); }
 
 	/* ── Bottom tab bar: hidden on mobile (replaced by hamburger) ── */
 	.tab-bar {

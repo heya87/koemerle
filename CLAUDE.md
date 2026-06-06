@@ -58,7 +58,7 @@ Migrations are plain SQL files in `app/drizzle/`. No `db:generate` — files are
    ```json
    { "idx": N, "version": "7", "when": 1234567890000, "tag": "NNNN_description", "breakpoints": true }
    ```
-   `when` is a Unix timestamp in milliseconds (any value works, used for ordering display only).
+   `when` is a Unix timestamp in milliseconds. **Must be strictly greater than the previous entry's `when`** — Drizzle uses this to determine which migrations are newer than the last applied one. Use `Date.now()` or increment the previous value by 1000.
 3. Run `npm run db:migrate` (prod) or `npm run db:clean` (local full reset).
 
 **Critical rule — never edit a migration file that has been applied to prod.**

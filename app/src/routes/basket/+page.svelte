@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import type { PageData, ActionData } from './$types';
+	import { ShoppingBasket, Plus } from 'lucide-svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -39,7 +40,22 @@
 		<ul class="item-list">
 			{#each data.items as item}
 				<li>
-					<span class="display">{item.displayText}</span>
+					{#if item.deliveryDate}
+						<span class="source-badge source-import" title="Importiert von Biogmüsabo"><ShoppingBasket size={12} /></span>
+					{:else}
+						<span class="source-badge source-manual" title="Manuell hinzugefügt"><Plus size={12} /></span>
+					{/if}
+					<form method="post" action="?/updateDisplay" use:enhance={() => async ({ update }) => update({ reset: false })} class="display-form">
+						<input type="hidden" name="id" value={item.id} />
+						<input
+							type="text"
+							name="displayText"
+							value={item.displayText}
+							class="display-input"
+							onblur={(e) => e.currentTarget.form?.requestSubmit()}
+							onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}
+						/>
+					</form>
 					<form method="post" action="?/updateKey" use:enhance={() => async ({ update }) => update({ reset: false })} class="key-form">
 						<input type="hidden" name="id" value={item.id} />
 						<input
@@ -59,6 +75,11 @@
 			{/each}
 		</ul>
 	{/if}
+
+	<form method="post" action="?/add" use:enhance class="add-form">
+		<input type="text" name="displayText" placeholder="z.B. 500g Karotten" required />
+		<button type="submit" class="btn-add">Hinzufügen</button>
+	</form>
 
 	{#if form?.message}
 		<p class="error">{form.message}</p>
@@ -147,8 +168,54 @@
 		border-bottom: 1px solid var(--border);
 	}
 
-	.display {
+	.source-badge {
+		flex-shrink: 0;
+		width: 1.25rem;
+		height: 1.25rem;
+		border-radius: 50%;
+		font-size: 0.7rem;
+		font-weight: 700;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		line-height: 1;
+	}
+
+	.source-import {
+		background: #e6f4ea;
+		color: #2e7d32;
+	}
+
+	.source-manual {
+		background: #f0f4ff;
+		color: #3949ab;
+	}
+
+	.display-form {
+		display: contents;
+	}
+
+	.display-input {
 		font-size: 0.975rem;
+		color: var(--text);
+		background: transparent;
+		padding: 0.15rem 0.45rem;
+		border-radius: 4px;
+		border: 1px solid transparent;
+		font-family: inherit;
+		flex: 1;
+		min-width: 0;
+		outline: none;
+		transition: border-color 0.15s;
+	}
+
+	.display-input:hover {
+		border-color: var(--border-strong);
+	}
+
+	.display-input:focus {
+		border-color: var(--green);
+		background: var(--surface);
 	}
 
 	.key-form {
@@ -194,6 +261,50 @@
 	.remove:hover {
 		color: var(--red);
 		background: #fdf0f0;
+	}
+
+	.add-form {
+		display: flex;
+		gap: 0.5rem;
+		padding: 0.875rem 1rem;
+		border-top: 1px solid var(--border);
+	}
+
+	.add-form input {
+		flex: 1;
+		padding: 0.6rem 0.875rem;
+		font-size: 0.975rem;
+		font-family: inherit;
+		border: 1.5px solid var(--border-strong);
+		border-radius: var(--radius);
+		background: var(--bg);
+		color: var(--text);
+		outline: none;
+		transition: border-color 0.15s, box-shadow 0.15s;
+	}
+
+	.add-form input:focus {
+		border-color: var(--green);
+		box-shadow: 0 0 0 3px rgba(77, 122, 88, 0.15);
+		background: var(--surface);
+	}
+
+	.btn-add {
+		padding: 0.6rem 1.1rem;
+		font-size: 0.9rem;
+		font-family: inherit;
+		font-weight: 500;
+		background: var(--green);
+		color: white;
+		border: none;
+		border-radius: var(--radius);
+		cursor: pointer;
+		white-space: nowrap;
+		transition: background 0.15s;
+	}
+
+	.btn-add:hover {
+		background: var(--green-dark);
 	}
 
 	.error {

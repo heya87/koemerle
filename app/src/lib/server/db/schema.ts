@@ -1,5 +1,6 @@
 import {
 	pgTable,
+	pgEnum,
 	serial,
 	text,
 	timestamp,
@@ -8,6 +9,8 @@ import {
 	integer,
 	unique
 } from 'drizzle-orm/pg-core';
+
+export const cronOutcomeEnum = pgEnum('cron_outcome', ['imported', 'already_done', 'no_delivery', 'error']);
 
 export * from './auth.schema';
 
@@ -74,7 +77,7 @@ export const ingredientGroups = pgTable('ingredient_groups', {
 	matchKeys: text('match_keys').array().notNull().default([])
 });
 
-export const fridgeItems = pgTable('fridge_items', {
+export const lagerItems = pgTable('lager_items', {
 	id: serial('id').primaryKey(),
 	displayText: text('display_text').notNull(),
 	matchKey: text('match_key').notNull()
@@ -85,6 +88,15 @@ export const plantFoods = pgTable('plant_foods', {
 	id: serial('id').primaryKey(),
 	matchKey: text('match_key').notNull().unique(),
 	label: text('label').notNull()
+});
+
+export const cronRuns = pgTable('cron_runs', {
+	id: serial('id').primaryKey(),
+	job: text('job').notNull(),
+	ranAt: timestamp('ran_at').notNull().defaultNow(),
+	success: boolean('success').notNull(),
+	outcome: cronOutcomeEnum('outcome').notNull(),
+	detail: text('detail')
 });
 
 export const shoppingSessions = pgTable('shopping_sessions', {

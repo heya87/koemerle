@@ -3,6 +3,17 @@ import { redirect } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { auth } from '$lib/server/auth';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
+import { env } from '$env/dynamic/private';
+import { autoSyncBasket } from '$lib/server/bioabo';
+import cron from 'node-cron';
+
+if (!building) {
+	const schedule = env.BASKET_SYNC_CRON ?? '0 5 * * *';
+	if (schedule) {
+		cron.schedule(schedule, () => { autoSyncBasket(); });
+		autoSyncBasket();
+	}
+}
 
 const handleBetterAuth: Handle = async ({ event, resolve }) => {
 	const session = await auth.api.getSession({ headers: event.request.headers });

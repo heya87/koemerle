@@ -1,4 +1,8 @@
 import { env } from '$env/dynamic/private';
+import { db } from '$lib/server/db';
+import { basketItems, cronRuns } from '$lib/server/db/schema';
+import { eq, and, isNotNull } from 'drizzle-orm';
+import { getWeekStart, generateBasketMatchKey } from '$lib/server/ingredients';
 
 export type BasketItem = {
 	name: string;
@@ -99,4 +103,49 @@ export async function fetchCurrentBasket(): Promise<{ items: BasketItem[]; deliv
 	}
 
 	return { items, deliveryDate };
+}
+
+export async function autoSyncBasket(): Promise<void> {
+	const job = 'basket-sync';
+
+	try {
+		if (!env.BIOABO_EMAIL || !env.BIOABO_PASSWORD) return;
+
+		const { items, deliveryDate } = await fetchCurrentBasket();
+
+		if (items.length === 0) {
+			await db.insert(cronRuns).values({ job, success: true, outcome: 'no_delivery', detail: null });
+			return;
+		}
+
+		const weekStart = getWeekStart();
+
+		// Always delete previously imported items and re-import fresh.
+		// Manually added items (deliveryDate IS NULL) are never touched.
+		if (deliveryDate) {
+			await db.delete(basketItems).where(
+				and(eq(basketItems.weekStart, weekStart), eq(basketItems.deliveryDate, deliveryDate))
+			);
+		} else {
+			await db.delete(basketItems).where(
+				and(eq(basketItems.weekStart, weekStart), isNotNull(basketItems.deliveryDate))
+			);
+		}
+
+		for (const item of items) {
+			const qty = Number.isInteger(item.amount) ? String(item.amount) : item.amount.toFixed(1);
+			const displayText = `${qty} ${item.unit} ${item.name}`;
+			const matchKey = item.matchKey ?? generateBasketMatchKey(displayText);
+			await db.insert(basketItems).values({ weekStart, displayText, matchKey, deliveryDate });
+		}
+
+		await db.insert(cronRuns).values({
+			job,
+			success: true,
+			outcome: 'imported',
+			detail: `${items.length} Artikel, Lieferung ${deliveryDate ?? 'unbekannt'}`
+		});
+	} catch (e) {
+		await db.insert(cronRuns).values({ job, success: false, outcome: 'error', detail: String(e) });
+	}
 }

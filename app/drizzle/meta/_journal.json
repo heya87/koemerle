@@ -64,6 +64,20 @@
       "when": 1775606405000,
       "tag": "0008_shopping_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1775606406000,
+      "tag": "0009_rename_fridge_to_lager",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1775606407000,
+      "tag": "0010_cron_runs",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@ import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { basketItems } from '$lib/server/db/schema';
-import { eq, and, isNotNull } from 'drizzle-orm';
+import { eq, and, isNotNull, sql } from 'drizzle-orm';
 import { getWeekStart, generateBasketMatchKey } from '$lib/server/ingredients';
 import { fetchCurrentBasket } from '$lib/server/bioabo';
 import { env } from '$env/dynamic/private';
@@ -13,7 +13,7 @@ export const load: PageServerLoad = async () => {
 		.select()
 		.from(basketItems)
 		.where(eq(basketItems.weekStart, weekStart))
-		.orderBy(basketItems.id);
+		.orderBy(sql`${basketItems.deliveryDate} ASC NULLS LAST`, basketItems.id);
 
 	const deliveryDate = items.find((i) => i.deliveryDate !== null)?.deliveryDate ?? null;
 
@@ -32,6 +32,28 @@ export const actions: Actions = {
 		await db.update(basketItems).set({ matchKey }).where(
 			and(eq(basketItems.id, id), eq(basketItems.weekStart, weekStart))
 		);
+	},
+
+	updateDisplay: async ({ request, locals }) => {
+		if (!locals.user) return fail(401);
+		const formData = await request.formData();
+		const id = Number(formData.get('id'));
+		const displayText = formData.get('displayText')?.toString().trim() ?? '';
+		if (!displayText) return fail(400, { message: 'Bezeichnung darf nicht leer sein.' });
+		const weekStart = getWeekStart();
+		await db.update(basketItems).set({ displayText }).where(
+			and(eq(basketItems.id, id), eq(basketItems.weekStart, weekStart))
+		);
+	},
+
+	add: async ({ request, locals }) => {
+		if (!locals.user) return fail(401);
+		const formData = await request.formData();
+		const displayText = formData.get('displayText')?.toString().trim() ?? '';
+		if (!displayText) return fail(400, { message: 'Bitte einen Eintrag eingeben.' });
+		const weekStart = getWeekStart();
+		const matchKey = generateBasketMatchKey(displayText);
+		await db.insert(basketItems).values({ weekStart, displayText, matchKey, deliveryDate: null });
 	},
 
 	remove: async ({ request, locals }) => {

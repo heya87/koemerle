@@ -5,7 +5,7 @@ import { db } from '$lib/server/db';
 import {
 	recipes,
 	basketItems,
-	fridgeItems,
+	lagerItems,
 	mealPlanEntries,
 	planMeta,
 	ingredientGroups,
@@ -32,9 +32,9 @@ function getBringLists() {
 
 async function generateItems(planStart: string, planEnd: string) {
 	const weekStart = getWeekStart();
-	const [basket, fridge, groups] = await Promise.all([
+	const [basket, lager, groups] = await Promise.all([
 		db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
-		db.select().from(fridgeItems),
+		db.select().from(lagerItems),
 		db.select().from(ingredientGroups)
 	]);
 
@@ -52,7 +52,7 @@ async function generateItems(planStart: string, planEnd: string) {
 	]);
 
 	const normalize = createKeyNormalizer(buildAliasMap(groups));
-	const availableKeys = [...basket.map((b) => b.matchKey), ...fridge.map((f) => f.matchKey)];
+	const availableKeys = [...basket.map((b) => b.matchKey), ...lager.map((l) => l.matchKey)];
 	const recipeById = new Map(plannedRecipes.map((r) => [r.id, r]));
 	const items = computeShoppingList(
 		recipeIds.map((id) => recipeById.get(id)?.ingredients ?? ''),

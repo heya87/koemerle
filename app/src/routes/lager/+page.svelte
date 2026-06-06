@@ -6,12 +6,12 @@
 </script>
 
 <div class="page-header">
-	<h1>Kühlschrank</h1>
+	<h1>Lager</h1>
 </div>
 
-<div class="fridge-card">
+<div class="lager-card">
 	{#if data.items.length === 0}
-		<p class="empty">Noch keine Zutaten im Kühlschrank.</p>
+		<p class="empty">Noch keine Zutaten im Lager.</p>
 	{:else}
 		<ul class="item-list">
 			{#each data.items as item}
@@ -28,7 +28,7 @@
 	{/if}
 
 	<form method="post" action="?/add" use:enhance class="add-form">
-		<input type="text" name="displayText" placeholder="z.B. Rahm" required autofocus />
+		<input type="text" name="displayText" placeholder="z.B. Kidneybohnen" required autofocus />
 		<button type="submit" class="btn-add">Hinzufügen</button>
 	</form>
 
@@ -45,7 +45,7 @@
 		margin-bottom: 1.25rem;
 	}
 
-	.fridge-card {
+	.lager-card {
 		background: var(--surface);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow);
@@ -154,7 +154,7 @@
 
 	/* Desktop */
 	@media (min-width: 768px) {
-		.fridge-card {
+		.lager-card {
 			max-width: 560px;
 		}
 	}
