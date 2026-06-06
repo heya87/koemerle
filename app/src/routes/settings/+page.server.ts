@@ -25,6 +25,24 @@ export const actions: Actions = {
 		await db.insert(ingredientGroups).values({ label, matchKeys });
 	},
 
+	editGroup: async ({ request, locals }) => {
+		if (!locals.user) return fail(401);
+
+		const fd = await request.formData();
+		const id = Number(fd.get('id')?.toString());
+		const field = fd.get('field')?.toString();
+		const value = fd.get('value')?.toString().trim() ?? '';
+		if (!id || !value) return fail(400);
+
+		if (field === 'label') {
+			await db.update(ingredientGroups).set({ label: value }).where(eq(ingredientGroups.id, id));
+		} else if (field === 'matchKeys') {
+			const matchKeys = value.split(',').map((k) => k.trim().toLowerCase()).filter(Boolean);
+			if (matchKeys.length < 2) return fail(400, { message: 'Mindestens 2 Schlüssel erforderlich' });
+			await db.update(ingredientGroups).set({ matchKeys }).where(eq(ingredientGroups.id, id));
+		}
+	},
+
 	deleteGroup: async ({ request, locals }) => {
 		if (!locals.user) return fail(401);
 

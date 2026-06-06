@@ -132,8 +132,34 @@
 						<tbody>
 							{#each data.ingredientGroups as g}
 								<tr>
-									<td>{g.label}</td>
-									<td class="col-key">{g.matchKeys.join(', ')}</td>
+									<td>
+										<form method="post" action="/settings?/editGroup" use:enhance={() => async ({ update }) => update({ reset: false })} style="display:contents">
+											<input type="hidden" name="id" value={g.id} />
+											<input type="hidden" name="field" value="label" />
+											<input
+												type="text"
+												name="value"
+												value={g.label}
+												class="inline-edit"
+												onblur={(e) => e.currentTarget.form?.requestSubmit()}
+												onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}
+											/>
+										</form>
+									</td>
+									<td class="col-key">
+										<form method="post" action="/settings?/editGroup" use:enhance={() => async ({ update }) => update({ reset: false })} style="display:contents">
+											<input type="hidden" name="id" value={g.id} />
+											<input type="hidden" name="field" value="matchKeys" />
+											<input
+												type="text"
+												name="value"
+												value={g.matchKeys.join(', ')}
+												class="inline-edit inline-edit-mono"
+												onblur={(e) => e.currentTarget.form?.requestSubmit()}
+												onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}
+											/>
+										</form>
+									</td>
 									<td>
 										<form
 											method="post"
@@ -635,6 +661,34 @@
 	}
 
 	.col-key {
+		font-family: monospace;
+		font-size: 0.8rem;
+		color: var(--text-muted);
+	}
+
+	.inline-edit {
+		width: 100%;
+		background: transparent;
+		border: 1px solid transparent;
+		border-radius: 3px;
+		padding: 0.15rem 0.3rem;
+		font-size: 0.875rem;
+		font-family: inherit;
+		color: var(--text);
+		outline: none;
+		transition: border-color 0.15s;
+	}
+
+	.inline-edit:hover {
+		border-color: var(--border-strong);
+	}
+
+	.inline-edit:focus {
+		border-color: var(--green);
+		background: var(--bg);
+	}
+
+	.inline-edit-mono {
 		font-family: monospace;
 		font-size: 0.8rem;
 		color: var(--text-muted);
