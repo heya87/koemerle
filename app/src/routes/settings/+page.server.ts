@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions } from './$types';
 import { db } from '$lib/server/db';
-import { ingredientGroups, plantFoods, recipes } from '$lib/server/db/schema';
+import { ingredientGroups, plantFoods, recipes, siteSettings } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import { generateMatchKeys } from '$lib/server/ingredients';
 
@@ -120,5 +120,29 @@ export const actions: Actions = {
 		}
 
 		return { imported, skipped };
+	},
+
+	saveClaudePrompt: async ({ request, locals }) => {
+		if (!locals.user) return fail(401);
+
+		const fd = await request.formData();
+		const template = fd.get('template')?.toString() ?? '';
+		if (!template.trim()) return fail(400, { message: 'Prompt darf nicht leer sein.' });
+
+		const existing = await db.select().from(siteSettings).limit(1);
+		if (existing.length > 0) {
+			await db.update(siteSettings).set({ claudePromptTemplate: template }).where(eq(siteSettings.id, existing[0].id));
+		} else {
+			await db.insert(siteSettings).values({ claudePromptTemplate: template });
+		}
+
+		return { savedPrompt: true };
+	},
+
+	resetClaudePrompt: async ({ locals }) => {
+		if (!locals.user) return fail(401);
+
+		await db.delete(siteSettings);
+		return { savedPrompt: true };
 	}
 };

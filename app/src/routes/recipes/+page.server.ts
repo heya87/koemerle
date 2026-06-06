@@ -5,7 +5,7 @@ import { recipes } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 
 export const load: PageServerLoad = async () => {
-	const all = await db.select().from(recipes).orderBy(recipes.name);
+	const all = await db.select().from(recipes).where(eq(recipes.transient, false)).orderBy(recipes.name);
 	return { recipes: all };
 };
 

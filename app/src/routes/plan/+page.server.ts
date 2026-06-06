@@ -1,11 +1,14 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { recipes, basketItems, mealPlanEntries, planMeta, activityLog, ingredientGroups, plantFoods } from '$lib/server/db/schema';
+import { recipes, basketItems, mealPlanEntries, planMeta, activityLog, ingredientGroups, plantFoods, siteSettings } from '$lib/server/db/schema';
 import { eq, and, gte, lte } from 'drizzle-orm';
-import { getWeekStart, createKeyNormalizer, buildAliasMap } from '$lib/server/ingredients';
+import { getWeekStart, createKeyNormalizer, buildAliasMap, generateMatchKeys } from '$lib/server/ingredients';
 import { suggestPlan, generateSlots } from '$lib/server/planning';
 import type { Slot, Course } from '$lib/server/planning';
+import Anthropic from '@anthropic-ai/sdk';
+import { env } from '$env/dynamic/private';
+import { DEFAULT_CLAUDE_PROMPT } from '$lib/server/claude';
 
 const NOT_NEEDED = '__not_needed__';
 
@@ -248,12 +251,15 @@ export const actions: Actions = {
 			return fail(400, { message: 'Ungültige Datumsangaben' });
 		}
 
+		type NewMeal = { name: string; ingredients: string; instructions: string; kcal: number | null; fatG: number | null; carbsG: number | null; proteinG: number | null; permanent: boolean };
 		let entries: {
 			date: string;
 			slot: Slot;
 			course: Course;
 			recipeId: number | null;
+			recipeName?: string | null;
 			notNeeded: boolean;
+			newMeal?: NewMeal | null;
 		}[];
 		try {
 			entries = JSON.parse(entriesJson);
@@ -264,6 +270,27 @@ export const actions: Actions = {
 		const userName = user.name ?? user.email;
 		const today = new Date().toISOString().split('T')[0];
 
+		// Insert new Claude-suggested meals as recipes, resolve their IDs
+		const resolvedEntries = await Promise.all(
+			entries.map(async (e) => {
+				if (e.notNeeded || e.recipeId || !e.newMeal?.name?.trim()) return e;
+				const meal = e.newMeal;
+				const matchKeys = generateMatchKeys(meal.ingredients);
+				const [inserted] = await db.insert(recipes).values({
+					name: meal.name.trim(),
+					ingredients: meal.ingredients.trim(),
+					preparation: meal.instructions?.trim() || null,
+					matchKeys,
+					kcal: meal.kcal ?? null,
+					fatG: meal.fatG ?? null,
+					carbsG: meal.carbsG ?? null,
+					proteinG: meal.proteinG ?? null,
+					transient: !meal.permanent
+				}).returning({ id: recipes.id });
+				return { ...e, recipeId: inserted.id };
+			})
+		);
+
 		await db.delete(planMeta);
 		await db.insert(planMeta).values({ planStart: startDate, planEnd: endDate, planningStartSlot: startSlot });
 
@@ -271,9 +298,9 @@ export const actions: Actions = {
 			and(gte(mealPlanEntries.date, startDate), lte(mealPlanEntries.date, endDate))
 		);
 
-		if (entries.length > 0) {
+		if (resolvedEntries.length > 0) {
 			await db.insert(mealPlanEntries).values(
-				entries.map((e) => ({
+				resolvedEntries.map((e) => ({
 					date: e.date,
 					slot: e.slot,
 					course: e.course ?? 'main',
@@ -283,6 +310,20 @@ export const actions: Actions = {
 					updatedAt: new Date()
 				}))
 			);
+		}
+
+		// Clean up transient recipes no longer referenced by any plan entry
+		const allPlanRecipeIds = await db
+			.select({ id: mealPlanEntries.recipeId })
+			.from(mealPlanEntries)
+			.then((rows) => new Set(rows.map((r) => r.id).filter((id): id is number => id !== null)));
+		const transientRecipes = await db
+			.select({ id: recipes.id })
+			.from(recipes)
+			.where(eq(recipes.transient, true));
+		const orphaned = transientRecipes.filter((r) => !allPlanRecipeIds.has(r.id));
+		if (orphaned.length > 0) {
+			await Promise.all(orphaned.map((r) => db.delete(recipes).where(eq(recipes.id, r.id))));
 		}
 
 		await db.insert(activityLog).values({
@@ -376,6 +417,199 @@ export const actions: Actions = {
 			message: `${userName} hat ${formatDateLabel(date)} ${SLOT_LABELS[slot]} ${COURSE_LABELS[course] ?? ''} geleert`,
 			createdAt: new Date()
 		});
+	},
+
+	getClaudeSuggestion: async ({ request, locals }) => {
+		const user = locals.user;
+		if (!user) return fail(401);
+
+		const { ANTHROPIC_API_KEY } = env;
+		if (!ANTHROPIC_API_KEY) return fail(500, { message: 'ANTHROPIC_API_KEY fehlt in den Umgebungsvariablen.' });
+
+		const fd = await request.formData();
+		const startDate = fd.get('startDate')?.toString() ?? '';
+		const endDate = fd.get('endDate')?.toString() ?? '';
+		const startSlot = (fd.get('startSlot')?.toString() ?? 'lunch') as Slot;
+
+		if (!isValidDate(startDate) || !isValidDate(endDate) || startDate > endDate) {
+			return fail(400, { message: 'Ungültige Datumsangaben' });
+		}
+
+		const weekStart = getWeekStart();
+
+		// Clean up transient recipes not referenced by any plan entry before building a new suggestion
+		const referencedIds = await db
+			.select({ id: mealPlanEntries.recipeId })
+			.from(mealPlanEntries)
+			.then((rows) => new Set(rows.map((r) => r.id).filter((id): id is number => id !== null)));
+		const allTransients = await db.select({ id: recipes.id }).from(recipes).where(eq(recipes.transient, true));
+		const orphanedNow = allTransients.filter((r) => !referencedIds.has(r.id));
+		if (orphanedNow.length > 0) {
+			await Promise.all(orphanedNow.map((r) => db.delete(recipes).where(eq(recipes.id, r.id))));
+		}
+
+		const [basket, allRecipes, existing, settingsRows, groups] = await Promise.all([
+			db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
+			db.select().from(recipes).where(eq(recipes.transient, false)),
+			db.select().from(mealPlanEntries),
+			db.select().from(siteSettings).limit(1),
+			db.select().from(ingredientGroups)
+		]);
+		const promptTemplate = settingsRows[0]?.claudePromptTemplate || DEFAULT_CLAUDE_PROMPT;
+
+		const allSlots = generateSlots(startDate, endDate, startSlot);
+		const allSlotKeys = new Set(allSlots.map(([d, s]) => `${d}-${s}`));
+		const notNeededFormKeys = new Set(fd.getAll('notNeeded').map((v) => v.toString()));
+
+		// Recipe IDs used outside the planning range (prevent cross-week duplicates)
+		const outsideEntries = existing.filter((e) => !allSlotKeys.has(`${e.date}-${e.slot}`));
+		const usedIds = new Set(
+			outsideEntries.map((e) => e.recipeId).filter((id): id is number => id !== null)
+		);
+
+		// Step 1: run local suggestPlan first — fills basket-matched slots
+		const normalize = createKeyNormalizer(buildAliasMap(groups));
+		const localResults = suggestPlan({
+			allRecipes,
+			basketItems: basket.map((b) => ({ matchKey: b.matchKey, deliveryDate: b.deliveryDate })),
+			usedIds,
+			occupiedKeys: new Set(),
+			notNeededSlotKeys: notNeededFormKeys,
+			slots: allSlots,
+			normalize
+		});
+
+		const localFilledKeys = new Set(
+			localResults.filter((e) => !e.notNeeded).map((e) => `${e.date}-${e.slot}`)
+		);
+		const localUsedIds = new Set(
+			localResults.map((e) => e.recipeId).filter((id): id is number => id !== null)
+		);
+		const allUsedIds = new Set([...usedIds, ...localUsedIds]);
+
+		// Step 2: find slots still empty after local planning
+		const emptyForClaude = allSlots.filter(
+			([d, s]) => !localFilledKeys.has(`${d}-${s}`) && !notNeededFormKeys.has(`${d}-${s}`)
+		);
+
+		const recipeById = new Map(allRecipes.map((r) => [r.id, r]));
+
+		// Build local suggestion entries (claudeSuggested: false)
+		const localEntries = localResults
+			.filter((e) => !e.notNeeded)
+			.map((e) => ({
+				date: e.date,
+				slot: e.slot,
+				course: e.course,
+				recipeId: e.recipeId ?? null,
+				recipeName: e.recipeId ? (recipeById.get(e.recipeId)?.name ?? null) : null,
+				recipeUrl: e.recipeId ? (recipeById.get(e.recipeId)?.recipeUrl ?? null) : null,
+				notNeeded: false,
+				claudeSuggested: false,
+				isNew: false,
+				newMeal: null
+			}));
+
+		// Step 3: ask Claude only about remaining empty slots
+		let claudeEntries: typeof localEntries = [];
+		if (emptyForClaude.length > 0) {
+			const basketList = basket.map((b) => b.displayText).join(', ') || 'keine Angaben';
+			const availableRecipes = allRecipes
+				.filter((r) => !allUsedIds.has(r.id))
+				.map((r) => ({ id: r.id, name: r.name, ingredients: r.ingredients.substring(0, 150) }));
+
+			const localMealLines = localEntries.map(
+				(e) => `${formatDateLabel(e.date)} ${SLOT_LABELS[e.slot]}: ${e.recipeName ?? '?'}`
+			);
+			const filledDescription = localMealLines.length > 0 ? localMealLines.join('\n') : 'noch nichts geplant';
+
+			const slotDescriptions = emptyForClaude
+				.map(([d, s]) => `${formatDateLabel(d)} ${SLOT_LABELS[s]} — date="${d}" slot="${s}"`)
+				.join('\n');
+
+			const prompt = promptTemplate
+				.replace('{basketList}', basketList)
+				.replace('{filledSlots}', filledDescription)
+				.replace('{availableRecipes}', JSON.stringify(availableRecipes))
+				.replace('{emptySlots}', slotDescriptions);
+
+			let rawText: string;
+			try {
+				const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+				console.log('[Claude] sending request, empty slots:', emptyForClaude.length);
+				const response = await client.messages.create({
+					model: 'claude-haiku-4-5-20251001',
+					max_tokens: 4000,
+					messages: [{ role: 'user', content: prompt }]
+				});
+				const block = response.content.find((c) => c.type === 'text');
+				if (!block || block.type !== 'text') throw new Error('no text block');
+				rawText = block.text;
+				console.log('[Claude] raw response:', rawText);
+			} catch (e) {
+				console.error('[Claude] API error:', e);
+				return fail(500, { message: 'Fehler beim Aufruf der Claude API.' });
+			}
+
+			type ClaudeRaw = {
+				date: string;
+				slot: string;
+				recipeId: number | null;
+				recipeName: string | null;
+				ingredients?: string | null;
+				instructions?: string | null;
+				kcal?: number | null;
+				fatG?: number | null;
+				carbsG?: number | null;
+				proteinG?: number | null;
+			};
+			let parsed: ClaudeRaw[];
+			try {
+				// Strip markdown code fences, then extract the JSON array
+				const stripped = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+				const start = stripped.indexOf('[');
+				const end = stripped.lastIndexOf(']');
+				if (start === -1 || end === -1) throw new Error('no JSON array found');
+				const clean = stripped.slice(start, end + 1);
+				console.log('[Claude] cleaned JSON:', clean.substring(0, 300));
+				parsed = JSON.parse(clean);
+				if (!Array.isArray(parsed)) throw new Error('not array');
+			} catch (e) {
+				console.error('[Claude] JSON parse error:', e, '\nRaw response:', rawText);
+				return fail(500, { message: 'Claude hat kein gültiges JSON zurückgegeben.' });
+			}
+
+			const emptySlotKeys = new Set(emptyForClaude.map(([d, s]) => `${d}-${s}`));
+			claudeEntries = parsed
+				.filter((e) => isValidDate(e.date) && ['lunch', 'dinner'].includes(e.slot) && emptySlotKeys.has(`${e.date}-${e.slot}`))
+				.map((e) => {
+					const rid = e.recipeId && recipeById.has(e.recipeId) ? e.recipeId : null;
+					return {
+						date: e.date,
+						slot: e.slot as Slot,
+						course: 'main' as Course,
+						recipeId: rid,
+						recipeName: rid ? (recipeById.get(rid)?.name ?? e.recipeName ?? null) : (e.recipeName ?? null),
+						recipeUrl: rid ? (recipeById.get(rid)?.recipeUrl ?? null) : null,
+						notNeeded: false,
+						claudeSuggested: true,
+						isNew: rid === null,
+						newMeal: rid === null ? {
+							name: e.recipeName ?? '',
+							ingredients: e.ingredients ?? '',
+							instructions: e.instructions ?? '',
+							kcal: e.kcal ?? null,
+							fatG: e.fatG ?? null,
+							carbsG: e.carbsG ?? null,
+							proteinG: e.proteinG ?? null,
+							permanent: false
+						} : null
+					};
+				});
+		}
+
+		const suggestion = [...localEntries, ...claudeEntries];
+		return { suggestion, startDate, endDate, startSlot, source: 'claude' as const };
 	},
 
 	moveSlot: async ({ request, locals }) => {

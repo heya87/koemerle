@@ -78,6 +78,20 @@
       "when": 1775606407000,
       "tag": "0010_cron_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1775606408000,
+      "tag": "0011_site_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1775606409000,
+      "tag": "0012_transient_recipes",
+      "breakpoints": true
     }
   ]
 }

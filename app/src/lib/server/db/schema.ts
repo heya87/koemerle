@@ -27,6 +27,7 @@ export const recipes = pgTable('recipes', {
 	carbsG: integer('carbs_g'),
 	proteinG: integer('protein_g'),
 	preparation: text('preparation'),
+	transient: boolean('transient').notNull().default(false),
 	createdAt: timestamp('created_at').notNull().defaultNow()
 });
 
@@ -113,4 +114,10 @@ export const shoppingItems = pgTable('shopping_items', {
 	displayText: text('display_text').notNull(),
 	matchKey: text('match_key').notNull(),
 	excluded: boolean('excluded').notNull().default(false)
+});
+
+// Single-row table for app-wide settings
+export const siteSettings = pgTable('site_settings', {
+	id: serial('id').primaryKey(),
+	claudePromptTemplate: text('claude_prompt_template')
 });

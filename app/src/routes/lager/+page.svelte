@@ -6,12 +6,12 @@
 </script>
 
 <div class="page-header">
-	<h1>Lager</h1>
+	<h1>Vorratskammer</h1>
 </div>
 
 <div class="lager-card">
 	{#if data.items.length === 0}
-		<p class="empty">Noch keine Zutaten im Lager.</p>
+		<p class="empty">Noch keine Zutaten in der Vorratskammer.</p>
 	{:else}
 		<ul class="item-list">
 			{#each data.items as item}

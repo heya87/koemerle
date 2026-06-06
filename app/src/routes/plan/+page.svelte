@@ -8,6 +8,8 @@
 
 	type Slot = 'lunch' | 'dinner';
 	type Course = 'main' | 'side';
+	type NewMeal = { name: string; ingredients: string; instructions: string; kcal: number | null; fatG: number | null; carbsG: number | null; proteinG: number | null; permanent: boolean };
+
 	type DraftEntry = {
 		date: string;
 		slot: Slot;
@@ -16,6 +18,16 @@
 		recipeName: string | null;
 		recipeUrl: string | null;
 		notNeeded: boolean;
+		claudeSuggested?: boolean;
+		isNew?: boolean;
+		newMeal?: NewMeal | null;
+	};
+
+	type ReviewEntry = DraftEntry & {
+		claudeSuggested: boolean;
+		isNew: boolean;
+		included: boolean;
+		newMeal: NewMeal | null;
 	};
 
 	const NOT_NEEDED = '__not_needed__';
@@ -130,11 +142,26 @@
 
 	$effect(() => {
 		if (form && 'suggestion' in form && Array.isArray((form as any).suggestion)) {
-			draft = (form as any).suggestion.map((e: DraftEntry) => ({ ...e }));
-			draftStartDate = (form as any).startDate;
-			draftEndDate = (form as any).endDate;
-			draftStartSlot = (form as any).startSlot;
-			if (draftStartDate) viewStartDate = draftStartDate;
+			const f = form as any;
+			if (f.source === 'claude') {
+				reviewEntries = f.suggestion.map((e: DraftEntry) => ({
+					...e,
+					claudeSuggested: e.claudeSuggested ?? false,
+					isNew: e.isNew ?? false,
+					included: true
+				}));
+				reviewStartDate = f.startDate;
+				reviewEndDate = f.endDate;
+				reviewStartSlot = f.startSlot;
+				if (reviewStartDate) viewStartDate = reviewStartDate;
+				reviewDialog?.showModal();
+			} else {
+				draft = f.suggestion.map((e: DraftEntry) => ({ ...e }));
+				draftStartDate = f.startDate;
+				draftEndDate = f.endDate;
+				draftStartSlot = f.startSlot;
+				if (draftStartDate) viewStartDate = draftStartDate;
+			}
 		}
 	});
 
@@ -323,6 +350,15 @@
 	let draftCount = $derived(draft?.filter((e) => !e.notNeeded).length ?? 0);
 
 	let networkError = $state<string | null>(null);
+	let claudeLoading = $state(false);
+	let reviewDialog: HTMLDialogElement | undefined = $state();
+	let reviewEntries: ReviewEntry[] = $state([]);
+	let reviewStartDate: string | null = $state(null);
+	let reviewEndDate: string | null = $state(null);
+	let reviewStartSlot: Slot | null = $state(null);
+
+	let mealDetailDialog: HTMLDialogElement | undefined = $state();
+	let activeMealEntry: ReviewEntry | null = $state(null);
 
 	let recipeFilter = $state('');
 	let selectedRecipeId = $state<number | null>(null);
@@ -434,9 +470,16 @@
 			method="post"
 			action="?/getSuggestion"
 			use:enhance={() => {
+				claudeLoading = true;
 				return async ({ result, update }) => {
+					claudeLoading = false;
 					if (result.type === 'error') {
 						networkError = 'Verbindungsfehler – bitte erneut versuchen.';
+						closeModal();
+						return;
+					}
+					if (result.type === 'failure' && result.data?.message) {
+						networkError = result.data.message as string;
 						closeModal();
 						return;
 					}
@@ -506,8 +549,15 @@
 				<button type="button" class="btn-modal-cancel" onclick={closeModal}>Abbrechen</button>
 				<button
 					type="submit"
+					formaction="?/getClaudeSuggestion"
+					class="btn-modal-claude"
+					disabled={claudeLoading}
+				>{claudeLoading ? 'Claude denkt…' : '✦ Mit Claude'}</button>
+				<button
+					type="submit"
 					formaction={modalDirect ? '?/quickPlan' : '?/getSuggestion'}
 					class="btn-modal-submit"
+					disabled={claudeLoading}
 				>Vorschlag erstellen</button>
 			</div>
 		</form>
@@ -708,6 +758,10 @@
 						networkError = 'Verbindungsfehler – bitte erneut versuchen.';
 						return;
 					}
+					if (result.type === 'failure') {
+						networkError = (result.data as any)?.message ?? 'Fehler beim Speichern.';
+						return;
+					}
 					networkError = null;
 					draft = null;
 					draftStartDate = null;
@@ -876,6 +930,129 @@
 			<p class="nutrient-insufficient">Statistik ist während eines aktiven Vorschlags nicht verfügbar.</p>
 		</div>
 	{/if}
+</dialog>
+
+<!-- Claude review dialog -->
+<dialog bind:this={reviewDialog} class="review-dialog">
+	<div class="review-header">
+		<h2>Claude-Vorschlag</h2>
+		<button type="button" class="modal-close" onclick={() => reviewDialog?.close()}>✕</button>
+	</div>
+
+	<div class="review-body">
+		{#if reviewEntries.some(e => !e.claudeSuggested)}
+			<p class="review-section-label">Lokal vorgeschlagen (Gemüsekorb)</p>
+			{#each reviewEntries.filter(e => !e.claudeSuggested) as entry}
+				<label class="review-row">
+					<input type="checkbox" bind:checked={entry.included} />
+					<span class="review-day">{formatDayHeader(entry.date)} {SLOT_LABELS[entry.slot]}</span>
+					<span class="review-meal">{entry.recipeName ?? '—'}</span>
+					<span class="badge badge-local">Korb</span>
+				</label>
+			{/each}
+		{/if}
+
+		{#if reviewEntries.some(e => e.claudeSuggested)}
+			<p class="review-section-label">Von Claude vorgeschlagen</p>
+			{#each reviewEntries.filter(e => e.claudeSuggested) as entry}
+				<div class="review-row">
+					<input type="checkbox" bind:checked={entry.included} onclick={e => e.stopPropagation()} />
+					<span class="review-day">{formatDayHeader(entry.date)} {SLOT_LABELS[entry.slot]}</span>
+					{#if entry.isNew}
+						<button
+							type="button"
+							class="review-meal-btn"
+							onclick={() => { activeMealEntry = entry; mealDetailDialog?.showModal(); }}
+						>{entry.recipeName ?? '—'} ›</button>
+						<span class="badge badge-new">Neu</span>
+						<label class="review-permanent" title="Permanent in Rezeptbibliothek speichern">
+							<input type="checkbox" bind:checked={entry.newMeal!.permanent} onclick={e => e.stopPropagation()} />
+							<span>Perm.</span>
+						</label>
+					{:else}
+						<span class="review-meal">{entry.recipeName ?? '—'}</span>
+						<span class="badge badge-claude">✦</span>
+					{/if}
+				</div>
+			{/each}
+		{/if}
+
+		{#if reviewEntries.length === 0}
+			<p class="review-note">Keine Vorschläge gefunden.</p>
+		{/if}
+	</div>
+
+	<div class="review-footer">
+		<button type="button" class="btn-modal-cancel" onclick={() => reviewDialog?.close()}>Verwerfen</button>
+		<button
+			type="button"
+			class="btn-modal-submit"
+			onclick={() => {
+				mealDetailDialog?.close();
+				draft = reviewEntries.filter(e => e.included).map(({ included, claudeSuggested, isNew, ...e }) => e);
+				draftStartDate = reviewStartDate;
+				draftEndDate = reviewEndDate;
+				draftStartSlot = reviewStartSlot;
+				reviewDialog?.close();
+			}}
+		>Übernehmen ({reviewEntries.filter(e => e.included).length})</button>
+	</div>
+</dialog>
+
+<!-- Meal detail dialog (for new Claude-suggested meals) -->
+<dialog bind:this={mealDetailDialog} class="meal-detail-dialog">
+	<div class="review-header">
+		<h2>{activeMealEntry?.newMeal?.name ?? 'Neues Gericht'}</h2>
+		<button type="button" class="modal-close" onclick={() => mealDetailDialog?.close()}>✕</button>
+	</div>
+
+	{#if activeMealEntry?.newMeal}
+		<div class="meal-detail-body">
+			<label class="field-label">
+				Name
+				<input
+					type="text"
+					class="field-input"
+					bind:value={activeMealEntry.newMeal.name}
+					onchange={() => { if (activeMealEntry) activeMealEntry.recipeName = activeMealEntry.newMeal!.name; }}
+				/>
+			</label>
+			<label class="field-label">
+				Zutaten
+				<textarea class="field-textarea" rows="6" bind:value={activeMealEntry.newMeal.ingredients}></textarea>
+			</label>
+			<label class="field-label">
+				Zubereitung
+				<textarea class="field-textarea" rows="4" bind:value={activeMealEntry.newMeal.instructions}></textarea>
+			</label>
+			<div class="field-row">
+				<label class="field-label">
+					Kalorien (kcal)
+					<input type="number" class="field-input" bind:value={activeMealEntry.newMeal.kcal} placeholder="—" />
+				</label>
+				<label class="field-label">
+					Fett (g)
+					<input type="number" class="field-input" bind:value={activeMealEntry.newMeal.fatG} placeholder="—" />
+				</label>
+				<label class="field-label">
+					Kohlenhydrate (g)
+					<input type="number" class="field-input" bind:value={activeMealEntry.newMeal.carbsG} placeholder="—" />
+				</label>
+				<label class="field-label">
+					Protein (g)
+					<input type="number" class="field-input" bind:value={activeMealEntry.newMeal.proteinG} placeholder="—" />
+				</label>
+			</div>
+			<label class="field-checkbox">
+				<input type="checkbox" bind:checked={activeMealEntry.newMeal.permanent} />
+				Permanent in Rezeptbibliothek speichern
+			</label>
+		</div>
+	{/if}
+
+	<div class="review-footer">
+		<button type="button" class="btn-modal-submit" onclick={() => mealDetailDialog?.close()}>Fertig</button>
+	</div>
 </dialog>
 
 <!-- Entry popup (fixed, outside all overflow containers) -->
@@ -1142,8 +1319,31 @@
 		transition: background 0.15s;
 	}
 
-	.btn-modal-submit:hover {
+	.btn-modal-submit:hover:not(:disabled) {
 		background: var(--green-dark);
+	}
+
+	.btn-modal-submit:disabled,
+	.btn-modal-claude:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.btn-modal-claude {
+		font-size: 0.9rem;
+		font-family: inherit;
+		font-weight: 600;
+		background: #5b4fcf;
+		color: white;
+		border: none;
+		border-radius: var(--radius);
+		padding: 0.55rem 1.25rem;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+
+	.btn-modal-claude:hover:not(:disabled) {
+		background: #4a3fb5;
 	}
 
 	/* ── Page header ── */
@@ -2233,4 +2433,236 @@
 		color: var(--green);
 		opacity: 1;
 	}
+
+	/* ── Claude review dialog ── */
+	.review-dialog {
+		border: none;
+		border-radius: var(--radius-lg);
+		box-shadow: 0 8px 32px rgba(42, 37, 32, 0.18);
+		padding: 0;
+		width: min(520px, 96vw);
+		max-height: 90vh;
+		overflow: hidden;
+	}
+
+	.review-dialog[open] {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.review-dialog::backdrop {
+		background: rgba(42, 37, 32, 0.45);
+	}
+
+	.review-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 1.25rem 1.5rem 0.75rem;
+		border-bottom: 1px solid var(--border);
+		flex-shrink: 0;
+	}
+
+	.review-header h2 { font-size: 1.1rem; }
+
+	.review-body {
+		flex: 1;
+		overflow-y: auto;
+		padding: 1rem 1.5rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.review-section-label {
+		font-size: 0.75rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--text-muted);
+		margin: 0.75rem 0 0.35rem;
+	}
+
+	.review-section-label:first-child { margin-top: 0; }
+
+	.review-row {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.45rem 0.5rem;
+		border-radius: var(--radius);
+		cursor: pointer;
+		transition: background 0.1s;
+	}
+
+	.review-row:hover { background: var(--surface); }
+
+	.review-row input[type="checkbox"] {
+		flex-shrink: 0;
+		width: 1rem;
+		height: 1rem;
+		accent-color: var(--green);
+		cursor: pointer;
+	}
+
+	.review-day {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		width: 8rem;
+		flex-shrink: 0;
+	}
+
+	.review-meal {
+		flex: 1;
+		font-size: 0.9rem;
+		color: var(--text);
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.badge {
+		font-size: 0.7rem;
+		font-weight: 700;
+		border-radius: 999px;
+		padding: 0.15rem 0.5rem;
+		flex-shrink: 0;
+	}
+
+	.badge-local {
+		background: var(--green-light);
+		color: var(--green-dark);
+	}
+
+	.badge-claude {
+		background: #ede9fe;
+		color: #5b4fcf;
+	}
+
+	.badge-new {
+		background: #fef3c7;
+		color: #92400e;
+	}
+
+	.review-note {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		font-style: italic;
+		margin: 0.5rem 0 0;
+		padding: 0.5rem 0.75rem;
+		background: #fef3c7;
+		border-radius: var(--radius);
+	}
+
+	.review-footer {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 0.75rem;
+		padding: 1rem 1.5rem;
+		border-top: 1px solid var(--border);
+		flex-shrink: 0;
+	}
+
+	.review-permanent {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		cursor: pointer;
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.review-permanent input { width: auto; margin: 0; cursor: pointer; }
+
+	.field-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr 1fr 1fr;
+		gap: 0.75rem;
+	}
+
+	.review-meal-btn {
+		flex: 1;
+		background: none;
+		border: none;
+		padding: 0;
+		font: inherit;
+		font-size: 0.9rem;
+		color: var(--primary);
+		text-align: left;
+		cursor: pointer;
+		text-decoration: underline dotted;
+	}
+
+	.review-meal-btn:hover { color: var(--primary-dark, var(--primary)); }
+
+	.meal-detail-dialog {
+		border: none;
+		border-radius: var(--radius-lg, 0.75rem);
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+		width: min(540px, 95vw);
+		max-height: 90vh;
+		padding: 0;
+		overflow: hidden;
+	}
+
+	.meal-detail-dialog[open] { display: flex; flex-direction: column; }
+
+	.meal-detail-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+
+	.meal-detail-body {
+		flex: 1;
+		overflow-y: auto;
+		padding: 1.25rem 1.5rem;
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.field-label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.field-input, .field-textarea {
+		font: inherit;
+		font-size: 0.95rem;
+		font-weight: 400;
+		color: var(--text);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		padding: 0.45rem 0.6rem;
+		width: 100%;
+		box-sizing: border-box;
+		resize: vertical;
+		background: var(--surface, #fff);
+	}
+
+	.field-input:focus, .field-textarea:focus {
+		outline: 2px solid var(--primary);
+		border-color: transparent;
+	}
+
+	.field-checkbox {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.9rem;
+		font-weight: 400;
+		cursor: pointer;
+		text-transform: none;
+		letter-spacing: 0;
+		color: var(--text);
+	}
+
+	.field-checkbox input { width: auto; margin: 0; cursor: pointer; }
 </style>

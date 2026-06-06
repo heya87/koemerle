@@ -9,7 +9,8 @@
 	let { children, data }: { children: any; data: LayoutData } = $props();
 
 	let settingsDialog: HTMLDialogElement | undefined = $state();
-	let activeTab: 'groups' | 'plants' | 'recipes' | 'cron' = $state('groups');
+	let activeTab: 'groups' | 'plants' | 'recipes' | 'cron' | 'claude' = $state('groups');
+	let claudePromptValue = $state('');
 	let newGroupLabel = $state('');
 	let newGroupKeys = $state('');
 	let importResult: { imported: number; skipped: number } | null = $state(null);
@@ -24,6 +25,7 @@
 	function openSettings() {
 		newGroupLabel = '';
 		newGroupKeys = '';
+		claudePromptValue = data.claudePrompt ?? '';
 		settingsDialog?.showModal();
 	}
 
@@ -44,7 +46,7 @@
 			<a href="/plan" class:active={page.url.pathname.startsWith('/plan')}>Wochenplan</a>
 			<a href="/recipes" class:active={page.url.pathname.startsWith('/recipes')}>Rezepte</a>
 			<a href="/basket" class:active={page.url.pathname.startsWith('/basket')}>Gemüsekorb</a>
-			<a href="/lager" class:active={page.url.pathname.startsWith('/lager')}>Lager</a>
+			<a href="/lager" class:active={page.url.pathname.startsWith('/lager')}>Vorratskammer</a>
 			<a href="/shopping" class:active={page.url.pathname.startsWith('/shopping')}>Einkaufen</a>
 		</nav>
 		<div class="user-area">
@@ -69,7 +71,7 @@
 			<a href="/plan" class:active={page.url.pathname.startsWith('/plan')}>Wochenplan</a>
 			<a href="/recipes" class:active={page.url.pathname.startsWith('/recipes')}>Rezepte</a>
 			<a href="/basket" class:active={page.url.pathname.startsWith('/basket')}>Gemüsekorb</a>
-			<a href="/lager" class:active={page.url.pathname.startsWith('/lager')}>Lager</a>
+			<a href="/lager" class:active={page.url.pathname.startsWith('/lager')}>Vorratskammer</a>
 			<a href="/shopping" class:active={page.url.pathname.startsWith('/shopping')}>Einkaufen</a>
 			<div class="mobile-menu-sep"></div>
 			<button type="button" onclick={() => { mobileMenuOpen = false; openSettings(); }}>Einstellungen</button>
@@ -111,6 +113,12 @@
 					class:active={activeTab === 'cron'}
 					onclick={() => (activeTab = 'cron')}
 				>Cron</button>
+				<button
+					type="button"
+					class="settings-tab"
+					class:active={activeTab === 'claude'}
+					onclick={() => { activeTab = 'claude'; claudePromptValue = data.claudePrompt ?? ''; }}
+				>Claude</button>
 			</nav>
 
 			{#if activeTab === 'groups'}
@@ -325,6 +333,35 @@
 					</div>
 				</div>
 			{/if}
+			{#if activeTab === 'claude'}
+				<div class="settings-section">
+					<div class="settings-info-box">
+						Prompt-Vorlage für den Claude-Mahlzeitenvorschlag. Verfügbare Platzhalter:
+						<code>{'{basketList}'}</code> Gemüsekorb,
+						<code>{'{filledSlots}'}</code> bereits geplante Mahlzeiten,
+						<code>{'{availableRecipes}'}</code> verfügbare Rezepte (JSON),
+						<code>{'{emptySlots}'}</code> leere Slots.
+					</div>
+					<form method="post" action="/settings?/saveClaudePrompt" use:enhance={() => async ({ result, update }) => { await update({ reset: false }); }}>
+						<textarea
+							name="template"
+							class="prompt-textarea"
+							rows="18"
+							bind:value={claudePromptValue}
+						></textarea>
+						<div class="prompt-actions">
+							<button type="submit" class="btn-save-prompt">Speichern</button>
+							<button
+								type="submit"
+								formaction="/settings?/resetClaudePrompt"
+								class="btn-reset-prompt"
+								onclick={() => { claudePromptValue = data.claudePrompt ?? ''; }}
+							>Auf Standard zurücksetzen</button>
+						</div>
+					</form>
+				</div>
+			{/if}
+
 			{#if activeTab === 'cron'}
 				<div class="settings-section">
 					<div class="settings-info-box">
@@ -362,7 +399,7 @@
 		<a href="/plan" class:active={page.url.pathname.startsWith('/plan')}>Wochenplan</a>
 		<a href="/recipes" class:active={page.url.pathname.startsWith('/recipes')}>Rezepte</a>
 		<a href="/basket" class:active={page.url.pathname.startsWith('/basket')}>Gemüsekorb</a>
-		<a href="/lager" class:active={page.url.pathname.startsWith('/lager')}>Lager</a>
+		<a href="/lager" class:active={page.url.pathname.startsWith('/lager')}>Vorratskammer</a>
 		<a href="/shopping" class:active={page.url.pathname.startsWith('/shopping')}>Einkaufen</a>
 	</nav>
 {/if}
@@ -693,6 +730,58 @@
 		font-size: 0.8rem;
 		color: var(--text-muted);
 	}
+
+	.prompt-textarea {
+		width: 100%;
+		font-family: monospace;
+		font-size: 0.8rem;
+		padding: 0.6rem 0.75rem;
+		border: 1.5px solid var(--border-strong);
+		border-radius: var(--radius);
+		background: var(--bg);
+		color: var(--text);
+		resize: vertical;
+		outline: none;
+		line-height: 1.5;
+		box-sizing: border-box;
+	}
+
+	.prompt-textarea:focus {
+		border-color: var(--green);
+	}
+
+	.prompt-actions {
+		display: flex;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+	}
+
+	.btn-save-prompt {
+		font-size: 0.875rem;
+		font-family: inherit;
+		font-weight: 600;
+		background: var(--green);
+		color: white;
+		border: none;
+		border-radius: var(--radius);
+		padding: 0.45rem 1rem;
+		cursor: pointer;
+	}
+
+	.btn-save-prompt:hover { background: var(--green-dark); }
+
+	.btn-reset-prompt {
+		font-size: 0.875rem;
+		font-family: inherit;
+		background: none;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius);
+		padding: 0.45rem 1rem;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+
+	.btn-reset-prompt:hover { background: var(--surface); color: var(--text); }
 
 	.btn-delete-synonym {
 		background: none;
