@@ -8,7 +8,7 @@
 
 	type Slot = 'lunch' | 'dinner';
 	type Course = 'main' | 'side';
-	type NewMeal = { name: string; ingredients: string; instructions: string; kcal: number | null; fatG: number | null; carbsG: number | null; proteinG: number | null; permanent: boolean };
+	type NewMeal = { name: string; recipeUrl: string | null; ingredients: string; instructions: string; kcal: number | null; fatG: number | null; carbsG: number | null; proteinG: number | null; permanent: boolean };
 
 	type DraftEntry = {
 		date: string;
@@ -964,7 +964,13 @@
 							class="review-meal-btn"
 							onclick={() => { activeMealEntry = entry; mealDetailDialog?.showModal(); }}
 						>{entry.recipeName ?? '—'} ›</button>
-						<span class="badge badge-new">Neu</span>
+						{#if entry.newMeal?.recipeUrl}
+							<a href={entry.newMeal.recipeUrl} target="_blank" rel="noopener" onclick={e => e.stopPropagation()} class="review-fooby-link">
+								<img src="/fooby-logo.png" alt="Fooby" class="review-fooby-logo" title="Auf Fooby ansehen" />
+							</a>
+						{:else}
+							<span class="badge badge-new">Neu</span>
+						{/if}
 						<label class="review-permanent" title="Permanent in Rezeptbibliothek speichern">
 							<input type="checkbox" bind:checked={entry.newMeal!.permanent} onclick={e => e.stopPropagation()} />
 							<span>Perm.</span>
@@ -1017,6 +1023,11 @@
 					onchange={() => { if (activeMealEntry) activeMealEntry.recipeName = activeMealEntry.newMeal!.name; }}
 				/>
 			</label>
+			{#if activeMealEntry.newMeal.recipeUrl}
+				<a href={activeMealEntry.newMeal.recipeUrl} target="_blank" rel="noopener" class="fooby-link">
+					<img src="/fooby-logo.png" alt="Fooby" class="fooby-logo" />
+				</a>
+			{/if}
 			<label class="field-label">
 				Zutaten
 				<textarea class="field-textarea" rows="6" bind:value={activeMealEntry.newMeal.ingredients}></textarea>
@@ -1025,24 +1036,27 @@
 				Zubereitung
 				<textarea class="field-textarea" rows="4" bind:value={activeMealEntry.newMeal.instructions}></textarea>
 			</label>
-			<div class="field-row">
-				<label class="field-label">
-					Kalorien (kcal)
-					<input type="number" class="field-input" bind:value={activeMealEntry.newMeal.kcal} placeholder="—" />
-				</label>
-				<label class="field-label">
-					Fett (g)
-					<input type="number" class="field-input" bind:value={activeMealEntry.newMeal.fatG} placeholder="—" />
-				</label>
-				<label class="field-label">
-					Kohlenhydrate (g)
-					<input type="number" class="field-input" bind:value={activeMealEntry.newMeal.carbsG} placeholder="—" />
-				</label>
-				<label class="field-label">
-					Protein (g)
-					<input type="number" class="field-input" bind:value={activeMealEntry.newMeal.proteinG} placeholder="—" />
-				</label>
-			</div>
+			<fieldset class="nutrition-fieldset">
+				<legend class="field-legend">Nährwerte <span class="field-hint">(pro Portion)</span></legend>
+				<div class="nutrition-grid">
+					<label class="field-label">
+						Kalorien (kcal)
+						<input type="number" class="field-input" bind:value={activeMealEntry.newMeal.kcal} placeholder="—" />
+					</label>
+					<label class="field-label">
+						Kohlenhydrate (g)
+						<input type="number" class="field-input" bind:value={activeMealEntry.newMeal.carbsG} placeholder="—" />
+					</label>
+					<label class="field-label">
+						Fett (g)
+						<input type="number" class="field-input" bind:value={activeMealEntry.newMeal.fatG} placeholder="—" />
+					</label>
+					<label class="field-label">
+						Protein (g)
+						<input type="number" class="field-input" bind:value={activeMealEntry.newMeal.proteinG} placeholder="—" />
+					</label>
+				</div>
+			</fieldset>
 			<label class="field-checkbox">
 				<input type="checkbox" bind:checked={activeMealEntry.newMeal.permanent} />
 				Permanent in Rezeptbibliothek speichern
@@ -2578,11 +2592,45 @@
 
 	.review-permanent input { width: auto; margin: 0; cursor: pointer; }
 
-	.field-row {
-		display: grid;
-		grid-template-columns: 1fr 1fr 1fr 1fr;
-		gap: 0.75rem;
+	.nutrition-fieldset {
+		border: 1.5px solid var(--border);
+		border-radius: var(--radius);
+		padding: 0.75rem 1rem 1rem;
 	}
+
+	.field-legend {
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding: 0 0.3rem;
+	}
+
+	.field-hint { font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+	.nutrition-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.75rem 1rem;
+		margin-top: 0.5rem;
+	}
+
+	.fooby-link {
+		display: inline-block;
+		padding: 0.3rem 0.6rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		width: fit-content;
+		line-height: 0;
+	}
+
+	.fooby-link:hover { background: var(--surface); }
+
+	.fooby-logo { height: 20px; width: auto; display: block; }
+
+	.review-fooby-link { display: inline-flex; align-items: center; flex-shrink: 0; }
+	.review-fooby-logo { height: 14px; width: auto; opacity: 0.8; }
 
 	.review-meal-btn {
 		flex: 1;

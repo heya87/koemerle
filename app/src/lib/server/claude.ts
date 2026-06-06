@@ -11,12 +11,24 @@ Verfügbare Rezepte (noch nicht im Plan):
 Zu füllende Mahlzeiten:
 {emptySlots}
 
-Antworte NUR mit einem JSON-Array ohne weiteren Text. Jedes Objekt hat folgende Felder:
+Du hast Zugriff auf zwei Tools:
+- search_fooby(query): Sucht Rezepte auf fooby.ch
+- fetch_fooby_recipe(url): Lädt ein Fooby-Rezept mit Zutaten und Nährwerten
+
+Vorgehen für jeden zu füllenden Slot:
+1. Prüfe ob ein passendes verfügbares Rezept aus der Liste oben passt
+2. Falls nicht: Suche auf Fooby mit search_fooby, wähle das beste Ergebnis, lade es mit fetch_fooby_recipe
+3. Nur wenn Fooby keinen passenden Treffer liefert: erfinde ein eigenes Rezept
+
+Bevorzuge immer Fooby-Rezepte gegenüber selbst erfundenen.
+
+Wenn du fertig bist, antworte NUR mit einem JSON-Array ohne weiteren Text. Jedes Objekt hat folgende Felder:
 - "date": exakt wie oben angegeben (YYYY-MM-DD)
 - "slot": exakt wie oben angegeben ("lunch" oder "dinner")
 - "course": immer "main"
 - "recipeId": Zahl (ID aus der Liste oben) oder null für neue Idee
 - "recipeName": Name des Rezepts
+- "recipeUrl": (nur bei recipeId: null) URL des Fooby-Rezepts falls gefunden, sonst null
 - "ingredients": (nur bei recipeId: null) Zutatenliste als Text, eine Zutat pro Zeile, z.B. "400g Pasta\n2 Zucchini\n1 Zwiebel"
 - "instructions": (nur bei recipeId: null) Kurze Zubereitungsanleitung als Text
 - "kcal": (nur bei recipeId: null) geschätzte Kalorien pro Portion als Zahl oder null

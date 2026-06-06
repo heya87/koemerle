@@ -7,8 +7,10 @@ import { getWeekStart, createKeyNormalizer, buildAliasMap, generateMatchKeys } f
 import { suggestPlan, generateSlots } from '$lib/server/planning';
 import type { Slot, Course } from '$lib/server/planning';
 import Anthropic from '@anthropic-ai/sdk';
+import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import { env } from '$env/dynamic/private';
 import { DEFAULT_CLAUDE_PROMPT } from '$lib/server/claude';
+import { searchFooby, fetchFoobyRecipe } from '$lib/server/fooby';
 
 const NOT_NEEDED = '__not_needed__';
 
@@ -251,7 +253,7 @@ export const actions: Actions = {
 			return fail(400, { message: 'Ungültige Datumsangaben' });
 		}
 
-		type NewMeal = { name: string; ingredients: string; instructions: string; kcal: number | null; fatG: number | null; carbsG: number | null; proteinG: number | null; permanent: boolean };
+		type NewMeal = { name: string; recipeUrl?: string | null; ingredients: string; instructions: string; kcal: number | null; fatG: number | null; carbsG: number | null; proteinG: number | null; permanent: boolean };
 		let entries: {
 			date: string;
 			slot: Slot;
@@ -280,6 +282,7 @@ export const actions: Actions = {
 					name: meal.name.trim(),
 					ingredients: meal.ingredients.trim(),
 					preparation: meal.instructions?.trim() || null,
+					recipeUrl: meal.recipeUrl ?? null,
 					matchKeys,
 					kcal: meal.kcal ?? null,
 					fatG: meal.fatG ?? null,
@@ -533,19 +536,90 @@ export const actions: Actions = {
 				.replace('{availableRecipes}', JSON.stringify(availableRecipes))
 				.replace('{emptySlots}', slotDescriptions);
 
+			const foobyTools: Anthropic.Tool[] = [
+				{
+					name: 'search_fooby',
+					description: 'Sucht Rezepte auf fooby.ch. Gibt max. 5 Treffer mit Name und URL zurück.',
+					input_schema: {
+						type: 'object',
+						properties: {
+							query: { type: 'string', description: 'Suchbegriff auf Deutsch, z.B. "Lachs Zucchini" oder "Linsensuppe"' }
+						},
+						required: ['query']
+					}
+				},
+				{
+					name: 'fetch_fooby_recipe',
+					description: 'Lädt ein Fooby-Rezept und gibt Zutaten, Zubereitung und Nährwerte zurück.',
+					input_schema: {
+						type: 'object',
+						properties: {
+							url: { type: 'string', description: 'Die URL des Fooby-Rezepts' }
+						},
+						required: ['url']
+					}
+				}
+			];
+
 			let rawText: string;
+			const fetchedFoobyRecipes = new Map<string, Awaited<ReturnType<typeof fetchFoobyRecipe>>>();
 			try {
 				const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
-				console.log('[Claude] sending request, empty slots:', emptyForClaude.length);
-				const response = await client.messages.create({
-					model: 'claude-haiku-4-5-20251001',
-					max_tokens: 4000,
-					messages: [{ role: 'user', content: prompt }]
-				});
-				const block = response.content.find((c) => c.type === 'text');
-				if (!block || block.type !== 'text') throw new Error('no text block');
-				rawText = block.text;
-				console.log('[Claude] raw response:', rawText);
+				const messages: MessageParam[] = [{ role: 'user', content: prompt }];
+				console.log('[Claude] sending request, empty slots:', emptyForClaude.length, ', available recipes:', availableRecipes.length, ', fetchedFooby before loop:', fetchedFoobyRecipes.size);
+
+				let iterations = 0;
+				while (true) {
+					if (++iterations > 10) throw new Error('too many tool call iterations');
+
+					const response = await client.messages.create({
+						model: 'claude-haiku-4-5-20251001',
+						max_tokens: 4000,
+						tools: foobyTools,
+						messages
+					});
+
+					if (response.stop_reason === 'end_turn') {
+						const block = response.content.find((c) => c.type === 'text');
+						if (!block || block.type !== 'text') throw new Error('no text block');
+						rawText = block.text;
+						console.log('[Claude] finished after', iterations, 'iteration(s), fooby recipes fetched:', fetchedFoobyRecipes.size);
+						console.log('[Claude] raw response:', rawText);
+						break;
+					}
+
+					if (response.stop_reason === 'tool_use') {
+						messages.push({ role: 'assistant', content: response.content });
+						const toolUses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
+						console.log('[Claude] tool calls:', toolUses.map((t) => `${t.name}(${JSON.stringify(t.input)})`));
+
+						const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
+							toolUses.map(async (tool) => {
+								let content: string;
+								try {
+									if (tool.name === 'search_fooby') {
+										const { results } = await searchFooby((tool.input as { query: string }).query);
+										content = JSON.stringify(results.slice(0, 5));
+									} else if (tool.name === 'fetch_fooby_recipe') {
+										const url = (tool.input as { url: string }).url;
+										const recipe = await fetchFoobyRecipe(url);
+										fetchedFoobyRecipes.set(url, recipe);
+										content = JSON.stringify(recipe);
+									} else {
+										content = JSON.stringify({ error: 'unknown tool' });
+									}
+								} catch (e) {
+									content = JSON.stringify({ error: String(e) });
+								}
+								console.log('[Claude] tool result for', tool.name, ':', content.substring(0, 200));
+								return { type: 'tool_result' as const, tool_use_id: tool.id, content };
+							})
+						);
+						messages.push({ role: 'user', content: toolResults });
+					} else {
+						throw new Error(`unexpected stop_reason: ${response.stop_reason}`);
+					}
+				}
 			} catch (e) {
 				console.error('[Claude] API error:', e);
 				return fail(500, { message: 'Fehler beim Aufruf der Claude API.' });
@@ -556,6 +630,7 @@ export const actions: Actions = {
 				slot: string;
 				recipeId: number | null;
 				recipeName: string | null;
+				recipeUrl?: string | null;
 				ingredients?: string | null;
 				instructions?: string | null;
 				kcal?: number | null;
@@ -580,30 +655,67 @@ export const actions: Actions = {
 			}
 
 			const emptySlotKeys = new Set(emptyForClaude.map(([d, s]) => `${d}-${s}`));
-			claudeEntries = parsed
-				.filter((e) => isValidDate(e.date) && ['lunch', 'dinner'].includes(e.slot) && emptySlotKeys.has(`${e.date}-${e.slot}`))
-				.map((e) => {
+			const filteredParsed = parsed.filter(
+				(e) => isValidDate(e.date) && ['lunch', 'dinner'].includes(e.slot) && emptySlotKeys.has(`${e.date}-${e.slot}`)
+			);
+
+			// Use Fooby data cached during tool loop, fall back to Claude's text
+			claudeEntries = filteredParsed.map((e) => {
 					const rid = e.recipeId && recipeById.has(e.recipeId) ? e.recipeId : null;
+					if (rid !== null) {
+						return {
+							date: e.date,
+							slot: e.slot as Slot,
+							course: 'main' as Course,
+							recipeId: rid,
+							recipeName: recipeById.get(rid)?.name ?? e.recipeName ?? null,
+							recipeUrl: recipeById.get(rid)?.recipeUrl ?? null,
+							notNeeded: false,
+							claudeSuggested: true,
+							isNew: false,
+							newMeal: null
+						};
+					}
+
+					let ingredients = e.ingredients ?? '';
+					let instructions = e.instructions ?? '';
+					let kcal = e.kcal ?? null;
+					let fatG = e.fatG ?? null;
+					let carbsG = e.carbsG ?? null;
+					let proteinG = e.proteinG ?? null;
+
+					if (e.recipeUrl) {
+						const fooby = fetchedFoobyRecipes.get(e.recipeUrl);
+						if (fooby) {
+							ingredients = fooby.ingredients;
+							kcal = fooby.kcal;
+							fatG = fooby.fatG;
+							carbsG = fooby.carbsG;
+							proteinG = fooby.proteinG;
+						}
+					}
+
 					return {
 						date: e.date,
 						slot: e.slot as Slot,
 						course: 'main' as Course,
-						recipeId: rid,
-						recipeName: rid ? (recipeById.get(rid)?.name ?? e.recipeName ?? null) : (e.recipeName ?? null),
-						recipeUrl: rid ? (recipeById.get(rid)?.recipeUrl ?? null) : null,
+						recipeId: null,
+						recipeName: e.recipeName ?? null,
+						recipeUrl: null,
 						notNeeded: false,
 						claudeSuggested: true,
-						isNew: rid === null,
-						newMeal: rid === null ? {
+						isNew: true,
+						newMeal: {
 							name: e.recipeName ?? '',
-							ingredients: e.ingredients ?? '',
-							instructions: e.instructions ?? '',
-							kcal: e.kcal ?? null,
-							fatG: e.fatG ?? null,
-							carbsG: e.carbsG ?? null,
-							proteinG: e.proteinG ?? null,
+							recipeUrl: e.recipeUrl ?? null,
+							ingredients,
+							instructions,
+							kcal,
+							fatG,
+							carbsG,
+							proteinG,
 							permanent: false
-						} : null
+						}
 					};
 				});
 		}
