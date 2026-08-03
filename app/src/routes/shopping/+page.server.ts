@@ -9,26 +9,18 @@ import {
 	mealPlanEntries,
 	planMeta,
 	ingredientGroups,
+	ingredientListPrefs,
 	shoppingSessions,
 	shoppingItems
 } from '$lib/server/db/schema';
 import { eq, and, gte, lte, inArray, isNull } from 'drizzle-orm';
 import { getWeekStart, buildAliasMap, createKeyNormalizer } from '$lib/server/ingredients';
 import { computeShoppingList } from '$lib/server/shopping';
+import { getBringLists } from '$lib/server/bring';
 import { env } from '$env/dynamic/private';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const BringApi = createRequire(import.meta.url)('bring-shopping') as any;
-
-function getBringLists() {
-	const { BRING_LIST_ID, BRING_LIST_NAME, BRING_LIST_ID_2, BRING_LIST_NAME_2 } = env;
-	return BRING_LIST_ID && BRING_LIST_ID_2
-		? [
-				{ id: BRING_LIST_ID, name: BRING_LIST_NAME || 'Liste 1' },
-				{ id: BRING_LIST_ID_2, name: BRING_LIST_NAME_2 || 'Liste 2' }
-			]
-		: [];
-}
 
 async function generateItems(planStart: string, planEnd: string) {
 	const weekStart = getWeekStart();
@@ -43,7 +35,10 @@ async function generateItems(planStart: string, planEnd: string) {
 		.from(mealPlanEntries)
 		.where(and(gte(mealPlanEntries.date, planStart), lte(mealPlanEntries.date, planEnd)));
 
-	const recipeIds = entries.map((e) => e.recipeId).filter((id): id is number => id !== null);
+	const recipeIds = entries
+		.filter((e) => !e.skipShopping)
+		.map((e) => e.recipeId)
+		.filter((id): id is number => id !== null);
 	const [plannedRecipes, allRecipes] = await Promise.all([
 		recipeIds.length > 0
 			? db.select().from(recipes).where(inArray(recipes.id, recipeIds))
@@ -73,18 +68,26 @@ export const load: PageServerLoad = async () => {
 	const session = sessions[0] ?? null;
 	const meta = metaRows[0] ?? null;
 
-	const items = session
+	const rawItems = session
 		? await db
 				.select()
 				.from(shoppingItems)
 				.where(and(eq(shoppingItems.sessionId, session.id), eq(shoppingItems.excluded, false)))
 		: [];
 
+	const bringLists = getBringLists();
+	const prefs = rawItems.length > 0 ? await db.select().from(ingredientListPrefs) : [];
+	const prefByKey = new Map(prefs.map((p) => [p.matchKey, p.listIndex]));
+	const items = rawItems.map((item) => ({
+		...item,
+		preferredListId: bringLists[prefByKey.get(item.matchKey) ?? 0]?.id ?? null
+	}));
+
 	return {
 		weekStart,
 		session,
 		items,
-		bringLists: getBringLists(),
+		bringLists,
 		defaultDates: meta ? { planStart: meta.planStart, planEnd: meta.planEnd } : null
 	};
 };
@@ -234,6 +237,23 @@ export const actions: Actions = {
 						sent++;
 					}
 				}
+			}
+
+			// Learn from whichever list each ingredient actually went to, so the next
+			// shopping list defaults to it without asking again.
+			const bringLists = getBringLists();
+			if (bringLists.length === 2) {
+				await Promise.all(
+					items.map((item) => {
+						const listId = assignments[item.displayText] ?? BRING_LIST_ID;
+						const listIndex = bringLists.findIndex((l) => l.id === listId);
+						if (listIndex === -1) return null;
+						return db
+							.insert(ingredientListPrefs)
+							.values({ matchKey: item.matchKey, listIndex })
+							.onConflictDoUpdate({ target: ingredientListPrefs.matchKey, set: { listIndex } });
+					})
+				);
 			}
 
 			await db

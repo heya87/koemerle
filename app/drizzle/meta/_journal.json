@@ -106,6 +106,13 @@
       "when": 1775606411000,
       "tag": "0014_meal_skip_shopping",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1775606412000,
+      "tag": "0015_ingredient_list_prefs",
+      "breakpoints": true
     }
   ]
 }

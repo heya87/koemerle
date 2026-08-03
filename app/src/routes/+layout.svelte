@@ -9,7 +9,9 @@
 	let { children, data }: { children: any; data: LayoutData } = $props();
 
 	let settingsDialog: HTMLDialogElement | undefined = $state();
-	let activeTab: 'groups' | 'plants' | 'recipes' | 'cron' | 'claude' = $state('groups');
+	let activeTab: 'groups' | 'plants' | 'stores' | 'recipes' | 'cron' | 'claude' = $state('groups');
+	let newListPrefKey = $state('');
+	let newListPrefIndex = $state(0);
 	let claudePromptValue = $state('');
 	let newGroupLabel = $state('');
 	let newGroupKeys = $state('');
@@ -53,6 +55,7 @@
 			<a href="/basket" class:active={page.url.pathname.startsWith('/basket')}>Gemüsekorb</a>
 			<a href="/lager" class:active={page.url.pathname.startsWith('/lager')}>Vorratskammer</a>
 			<a href="/shopping" class:active={page.url.pathname.startsWith('/shopping')}>Einkaufen</a>
+			<a href="/clara" class:active={page.url.pathname.startsWith('/clara')}>Clara</a>
 		</nav>
 		<div class="user-area">
 			<span class="username">{data.user.name}</span>
@@ -78,6 +81,7 @@
 			<a href="/basket" class:active={page.url.pathname.startsWith('/basket')}>Gemüsekorb</a>
 			<a href="/lager" class:active={page.url.pathname.startsWith('/lager')}>Vorratskammer</a>
 			<a href="/shopping" class:active={page.url.pathname.startsWith('/shopping')}>Einkaufen</a>
+			<a href="/clara" class:active={page.url.pathname.startsWith('/clara')}>Clara</a>
 			<div class="mobile-menu-sep"></div>
 			<button type="button" onclick={() => { mobileMenuOpen = false; openSettings(); }}>Einstellungen</button>
 			<form method="post" action="/logout" use:enhance>
@@ -106,6 +110,12 @@
 					class:active={activeTab === 'plants'}
 					onclick={() => (activeTab = 'plants')}
 				>Pflanzliche Zutaten</button>
+				<button
+					type="button"
+					class="settings-tab"
+					class:active={activeTab === 'stores'}
+					onclick={() => (activeTab = 'stores')}
+				>Läden</button>
 				<button
 					type="button"
 					class="settings-tab"
@@ -279,6 +289,84 @@
 				</div>
 			{/if}
 
+			{#if activeTab === 'stores'}
+				<div class="settings-section">
+					{#if data.bringLists.length < 2}
+						<div class="settings-info-box">
+							Zwei Bring!-Listen sind nicht konfiguriert (BRING_LIST_ID / BRING_LIST_ID_2 fehlen).
+							Diese Zuordnung greift erst, sobald beide Listen eingerichtet sind.
+						</div>
+					{:else}
+						<div class="settings-info-box">
+							Kömerle merkt sich pro Zutat, in welche Liste sie beim letzten Senden an Bring! einsortiert wurde,
+							und schlägt das beim nächsten Mal automatisch wieder vor. Hier siehst und korrigierst du die gelernten Zuordnungen.
+						</div>
+
+						<table class="synonym-table">
+							<thead>
+								<tr>
+									<th>Zutat</th>
+									<th>Liste</th>
+									<th></th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each data.listPrefs as pref}
+									<tr>
+										<td class="col-key">{pref.matchKey}</td>
+										<td>
+											<form
+												method="post"
+												action="/settings?/setListPref"
+												use:enhance={() => async ({ update }) => { await update(); await invalidateAll(); }}
+											>
+												<input type="hidden" name="matchKey" value={pref.matchKey} />
+												<input type="hidden" name="listIndex" value={pref.listIndex === 0 ? 1 : 0} />
+												<button type="submit" class="list-pref-toggle" class:list-pref-1={pref.listIndex === 1}>
+													{data.bringLists[pref.listIndex]?.name ?? '—'}
+												</button>
+											</form>
+										</td>
+										<td>
+											<form
+												method="post"
+												action="/settings?/deleteListPref"
+												use:enhance={() => async ({ update }) => { await update(); await invalidateAll(); }}
+											>
+												<input type="hidden" name="id" value={pref.id} />
+												<button type="submit" class="btn-delete-synonym">✕</button>
+											</form>
+										</td>
+									</tr>
+								{:else}
+									<tr><td colspan="3" class="empty-synonyms">Noch keine gelernten Zuordnungen.</td></tr>
+								{/each}
+							</tbody>
+						</table>
+
+						<form
+							method="post"
+							action="/settings?/setListPref"
+							class="add-synonym-form"
+							use:enhance={() => async ({ update }) => {
+								await update();
+								await invalidateAll();
+								newListPrefKey = '';
+								newListPrefIndex = 0;
+							}}
+						>
+							<input type="text" name="matchKey" placeholder="Zutat (z.B. mehl)" bind:value={newListPrefKey} required />
+							<select name="listIndex" bind:value={newListPrefIndex}>
+								{#each data.bringLists as list, i}
+									<option value={i}>{list.name}</option>
+								{/each}
+							</select>
+							<button type="submit" class="btn-add-synonym">Hinzufügen</button>
+						</form>
+					{/if}
+				</div>
+			{/if}
+
 			{#if activeTab === 'recipes'}
 				<div class="settings-section">
 					<div class="settings-info-box">
@@ -397,6 +485,7 @@
 					{/if}
 				</div>
 			{/if}
+
 		</div>
 	</dialog>
 
@@ -826,6 +915,26 @@
 		color: var(--red);
 		background: #fdf0f0;
 	}
+
+	.list-pref-toggle {
+		font-size: 0.8rem;
+		font-family: inherit;
+		padding: 0.25rem 0.7rem;
+		border: 1.5px solid var(--green);
+		border-radius: var(--radius);
+		background: var(--green-light);
+		color: var(--green-dark);
+		cursor: pointer;
+		white-space: nowrap;
+		transition: background 0.15s;
+	}
+
+	.list-pref-toggle.list-pref-1 {
+		border-color: #5b4fcf;
+		background: #ece9fb;
+		color: #4a3fb5;
+	}
+
 
 	.add-synonym-form {
 		display: flex;

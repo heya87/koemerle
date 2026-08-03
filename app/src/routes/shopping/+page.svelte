@@ -16,23 +16,35 @@
 		sessionDateEnd = data.session?.planEnd ?? '';
 	});
 
-	function getListId(itemText: string): string {
-		return assignments[itemText] ?? data.bringLists[0]?.id ?? '';
+	type ShoppingItem = (typeof data.items)[number];
+
+	function getListId(item: ShoppingItem): string {
+		return assignments[item.displayText] ?? item.preferredListId ?? data.bringLists[0]?.id ?? '';
 	}
 
-	function getListName(itemText: string): string {
-		const id = getListId(itemText);
+	function getListName(item: ShoppingItem): string {
+		const id = getListId(item);
 		return data.bringLists.find((l) => l.id === id)?.name ?? '';
 	}
 
-	function toggleList(itemText: string) {
-		const current = getListId(itemText);
+	function getListSlot(item: ShoppingItem): 0 | 1 {
+		const id = getListId(item);
+		return data.bringLists.findIndex((l) => l.id === id) === 1 ? 1 : 0;
+	}
+
+	function toggleList(item: ShoppingItem) {
+		const current = getListId(item);
 		const other = data.bringLists.find((l) => l.id !== current);
-		if (other) assignments[itemText] = other.id;
+		if (other) assignments[item.displayText] = other.id;
 	}
 
 	let visibleItems = $derived(data.items.filter((item) => !locallyExcluded.has(item.id)));
-	let assignmentsJson = $derived(JSON.stringify(assignments));
+	// Resolve every item's list explicitly (not just manually-toggled ones), so the
+	// server knows exactly what was used — including learned defaults — for both
+	// sending to Bring! and updating the learned preference afterwards.
+	let assignmentsJson = $derived(
+		JSON.stringify(Object.fromEntries(data.items.map((item) => [item.displayText, getListId(item)])))
+	);
 
 	function formatDate(iso: string): string {
 		const [y, m, d] = iso.split('-');
@@ -128,16 +140,17 @@
 			{:else}
 				<ul class="item-list">
 					{#each visibleItems as item (item.id)}
-						<li>
-							<span>{item.displayText}</span>
+						<li class:list-slot-0={getListSlot(item) === 0} class:list-slot-1={getListSlot(item) === 1}>
+							<span class="item-text">{item.displayText}</span>
 							<div class="item-actions">
 								{#if data.bringLists.length === 2}
 									<button
 										type="button"
 										class="list-toggle"
-										onclick={() => toggleList(item.displayText)}
+										class:list-toggle-1={getListSlot(item) === 1}
+										onclick={() => toggleList(item)}
 									>
-										{getListName(item.displayText)}
+										{getListName(item)}
 									</button>
 								{/if}
 								<form
@@ -305,8 +318,9 @@
 	}
 
 	.item-list li {
-		padding: 0.75rem 1rem;
+		padding: 0.75rem 1rem 0.75rem 0.8rem;
 		border-bottom: 1px solid var(--border);
+		border-left: 4px solid transparent;
 		font-size: 0.975rem;
 		display: flex;
 		align-items: center;
@@ -316,6 +330,35 @@
 
 	.item-list li:last-child {
 		border-bottom: none;
+	}
+
+	/* Visually tell the two Bring! lists apart at a glance (e.g. Unverpackt vs. Liebesnest) */
+	.item-list li.list-slot-0 {
+		border-left-color: var(--green);
+	}
+
+	.item-list li.list-slot-1 {
+		border-left-color: #5b4fcf;
+	}
+
+	.item-text {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.item-text::before {
+		content: '';
+		width: 0.55rem;
+		height: 0.55rem;
+		border-radius: 2px;
+		flex-shrink: 0;
+		background: var(--green);
+	}
+
+	.list-slot-1 .item-text::before {
+		border-radius: 50%;
+		background: #5b4fcf;
 	}
 
 	.item-actions {
@@ -359,6 +402,11 @@
 		background: var(--green);
 		color: white;
 		border-color: var(--green);
+	}
+
+	.list-toggle-1:hover {
+		background: #5b4fcf;
+		border-color: #5b4fcf;
 	}
 
 	.actions {

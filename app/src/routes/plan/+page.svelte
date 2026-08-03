@@ -18,6 +18,7 @@
 		recipeName: string | null;
 		recipeUrl: string | null;
 		notNeeded: boolean;
+		skipShopping?: boolean;
 		claudeSuggested?: boolean;
 		isNew?: boolean;
 		newMeal?: NewMeal | null;
@@ -219,6 +220,29 @@
 		return !!(getRecipe((entry as DbEntry).recipeId ?? null)?.recipeUrl);
 	}
 
+	function entrySkipShopping(entry: DraftEntry | DbEntry | null): boolean {
+		return !!entry?.skipShopping;
+	}
+
+	async function toggleSkipShopping(date: string, slot: Slot, course: Course) {
+		if (draft !== null) {
+			draft = draft.map((e) =>
+				e.date === date && e.slot === slot && e.course === course
+					? { ...e, skipShopping: !e.skipShopping }
+					: e
+			);
+			return;
+		}
+		const next = !entrySkipShopping(getEntry(date, slot, course));
+		const fd = new FormData();
+		fd.append('date', date);
+		fd.append('slot', slot);
+		fd.append('course', course);
+		fd.append('skipShopping', String(next));
+		await fetch('?/toggleSkipShopping', { method: 'POST', body: fd });
+		await invalidateAll();
+	}
+
 	// ── Stats popup (mobile) ──
 	let statsDialog: HTMLDialogElement | undefined = $state();
 
@@ -347,7 +371,7 @@
 		dragOverKey = null;
 	}
 
-	let draftCount = $derived(draft?.filter((e) => !e.notNeeded).length ?? 0);
+	let draftCount = $derived(((draft as DraftEntry[] | null) ?? []).filter((e) => !e.notNeeded).length);
 
 	let networkError = $state<string | null>(null);
 	let claudeLoading = $state(false);
@@ -393,6 +417,7 @@
 			<span
 				class="meal-chip"
 				class:is-dragging={isDragging}
+				class:skip-shopping={entrySkipShopping(entry)}
 				draggable="true"
 				title={entryLabel(entry) ?? undefined}
 				ondragstart={(e) => onDragStart(e, date, slot, course)}
@@ -408,6 +433,26 @@
 					{entryLabel(entry)}
 				{/if}
 			</span>
+			<button
+				class="btn-skip-shopping"
+				class:active={entrySkipShopping(entry)}
+				class:btn-layout-hidden={inMoveMode}
+				title={entrySkipShopping(entry) ? 'Nicht auf der Einkaufsliste — klicken zum Hinzufügen' : 'Auf der Einkaufsliste — klicken zum Ausschliessen'}
+				onclick={(e) => { e.stopPropagation(); toggleSkipShopping(date, slot, course); }}
+			>
+				<span class="shopping-indicator">
+					{#if entrySkipShopping(entry)}
+						<svg viewBox="0 0 20 20" class="indicator-shape" aria-hidden="true">
+							<rect x="1.5" y="1.5" width="17" height="17" rx="4" fill="#fdf3e3" stroke="#d94f4f" stroke-width="1.5" />
+						</svg>
+					{:else}
+						<svg viewBox="0 0 20 20" class="indicator-shape" aria-hidden="true">
+							<circle cx="10" cy="10" r="9" fill="color-mix(in srgb, var(--green) 18%, white)" stroke="var(--green)" stroke-width="1.5" />
+						</svg>
+					{/if}
+					<span class="indicator-emoji">🛒</span>
+				</span>
+			</button>
 			<button
 				class="btn-move-entry"
 				class:btn-layout-hidden={inMoveMode && !isMoveSource}
@@ -620,7 +665,7 @@
 	</div>
 {:else}
 	<div class="no-plan-bar">
-		<button class="btn-open-modal" type="button" onclick={openModal}>Vorschlag erstellen</button>
+		<button class="btn-open-modal" type="button" onclick={() => openModal()}>Vorschlag erstellen</button>
 		<span class="no-plan-hint">Noch kein Plan erstellt.</span>
 	</div>
 {/if}
@@ -2461,6 +2506,58 @@
 		.btn-move-entry {
 			display: none;
 		}
+	}
+
+	/* ── Skip-shopping toggle ──
+	   Green circle = will be added to the shopping list (default).
+	   Red triangle = excluded from the shopping list. Shape carries the meaning,
+	   not just color, so it still reads for colorblind users. */
+	.btn-skip-shopping {
+		background: none;
+		border: none;
+		cursor: pointer;
+		padding: 0.3rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		border-radius: 4px;
+		transition: background 0.15s;
+	}
+
+	.btn-skip-shopping:hover {
+		background: var(--bg);
+	}
+
+	.shopping-indicator {
+		position: relative;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.85rem;
+		height: 1.85rem;
+	}
+
+	.indicator-shape {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+	}
+
+	.indicator-emoji {
+		position: relative;
+		font-size: 0.85rem;
+		line-height: 1;
+		transform: translateY(1px);
+	}
+
+
+	.meal-chip.skip-shopping {
+		opacity: 0.7;
+		text-decoration: line-through;
+		text-decoration-color: var(--text-light);
+		text-decoration-thickness: 1px;
 	}
 
 	.btn-layout-hidden {

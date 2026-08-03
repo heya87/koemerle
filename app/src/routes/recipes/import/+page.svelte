@@ -126,7 +126,7 @@
 				{#if previewCarbsG !== null}<input type="hidden" name="carbs_g" value={previewCarbsG} />{/if}
 				{#if previewProteinG !== null}<input type="hidden" name="protein_g" value={previewProteinG} />{/if}
 
-				{#if form?.message && form?.preview}
+				{#if form?.message && previewUrl}
 					<p class="error">{form.message}</p>
 				{/if}
 

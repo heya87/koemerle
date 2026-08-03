@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions } from './$types';
 import { db } from '$lib/server/db';
-import { ingredientGroups, plantFoods, recipes, siteSettings } from '$lib/server/db/schema';
+import { ingredientGroups, plantFoods, recipes, siteSettings, ingredientListPrefs } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import { generateMatchKeys } from '$lib/server/ingredients';
 
@@ -144,5 +144,30 @@ export const actions: Actions = {
 
 		await db.delete(siteSettings);
 		return { savedPrompt: true };
+	},
+
+	setListPref: async ({ request, locals }) => {
+		if (!locals.user) return fail(401);
+
+		const fd = await request.formData();
+		const matchKey = fd.get('matchKey')?.toString().trim().toLowerCase();
+		const listIndex = Number(fd.get('listIndex'));
+
+		if (!matchKey || ![0, 1].includes(listIndex)) return fail(400, { message: 'Zutat und Liste erforderlich' });
+
+		await db
+			.insert(ingredientListPrefs)
+			.values({ matchKey, listIndex })
+			.onConflictDoUpdate({ target: ingredientListPrefs.matchKey, set: { listIndex } });
+	},
+
+	deleteListPref: async ({ request, locals }) => {
+		if (!locals.user) return fail(401);
+
+		const fd = await request.formData();
+		const id = Number(fd.get('id')?.toString());
+		if (!id) return fail(400);
+
+		await db.delete(ingredientListPrefs).where(eq(ingredientListPrefs.id, id));
 	}
 };

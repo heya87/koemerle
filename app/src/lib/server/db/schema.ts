@@ -52,6 +52,8 @@ export const mealPlanEntries = pgTable(
 		course: text('course').notNull().default('main'),
 		recipeId: integer('recipe_id').references(() => recipes.id),
 		freeText: text('free_text'),
+		// We already have these ingredients — leave them out of the generated shopping list.
+		skipShopping: boolean('skip_shopping').notNull().default(false),
 		updatedBy: text('updated_by').notNull(),
 		updatedAt: timestamp('updated_at').notNull().defaultNow()
 	},
@@ -117,6 +119,15 @@ export const shoppingItems = pgTable('shopping_items', {
 	displayText: text('display_text').notNull(),
 	matchKey: text('match_key').notNull(),
 	excluded: boolean('excluded').notNull().default(false)
+});
+
+// Learned/edited preference for which Bring! list an ingredient goes to.
+// listIndex is an index into getBringLists() (0 or 1) — not a raw Bring list id,
+// since which env-configured list is which can change per deployment.
+export const ingredientListPrefs = pgTable('ingredient_list_prefs', {
+	id: serial('id').primaryKey(),
+	matchKey: text('match_key').notNull().unique(),
+	listIndex: integer('list_index').notNull().default(0)
 });
 
 // Single-row table for app-wide settings
