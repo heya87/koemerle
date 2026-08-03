@@ -121,14 +121,15 @@ export async function autoSyncBasket(): Promise<void> {
 		const weekStart = getWeekStart();
 
 		// Always delete previously imported items and re-import fresh.
-		// Manually added items (deliveryDate IS NULL) are never touched.
+		// Manually added items (manual = true) are never touched, even if they now
+		// share the same deliveryDate as synced items.
 		if (deliveryDate) {
 			await db.delete(basketItems).where(
-				and(eq(basketItems.weekStart, weekStart), eq(basketItems.deliveryDate, deliveryDate))
+				and(eq(basketItems.weekStart, weekStart), eq(basketItems.deliveryDate, deliveryDate), eq(basketItems.manual, false))
 			);
 		} else {
 			await db.delete(basketItems).where(
-				and(eq(basketItems.weekStart, weekStart), isNotNull(basketItems.deliveryDate))
+				and(eq(basketItems.weekStart, weekStart), isNotNull(basketItems.deliveryDate), eq(basketItems.manual, false))
 			);
 		}
 

@@ -42,6 +42,11 @@
 	<header class="top-bar">
 	<div class="top-bar-inner">
 		<span class="brand">Kömerle</span>
+		<nav class="mobile-quick-nav">
+			<a href="/plan" class:active={page.url.pathname.startsWith('/plan')} title="Wochenplan" aria-label="Wochenplan">📅</a>
+			<a href="/recipes" class:active={page.url.pathname.startsWith('/recipes')} title="Rezepte" aria-label="Rezepte">📖</a>
+			<a href="/basket" class:active={page.url.pathname.startsWith('/basket')} title="Gemüsekorb" aria-label="Gemüsekorb">🧺</a>
+		</nav>
 		<nav class="desktop-nav">
 			<a href="/plan" class:active={page.url.pathname.startsWith('/plan')}>Wochenplan</a>
 			<a href="/recipes" class:active={page.url.pathname.startsWith('/recipes')}>Rezepte</a>
@@ -438,6 +443,29 @@
 
 	.desktop-nav {
 		display: none;
+	}
+
+	.mobile-quick-nav {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	.mobile-quick-nav a {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.1rem;
+		height: 2.1rem;
+		font-size: 1.2rem;
+		border-radius: var(--radius);
+		text-decoration: none;
+		line-height: 1;
+		transition: background 0.15s;
+	}
+
+	.mobile-quick-nav a.active {
+		background: var(--green-light);
 	}
 
 	.user-area {
@@ -1033,6 +1061,10 @@
 		}
 
 		.mobile-header-right {
+			display: none;
+		}
+
+		.mobile-quick-nav {
 			display: none;
 		}
 

@@ -646,7 +646,7 @@
 {#snippet dayCardsList(dates: string[])}
 	<div class="day-cards">
 		{#each dates as date}
-			<div class="day-card" data-date={date}>
+			<div class="day-card" class:is-past={date < data.today} data-date={date}>
 				<div class="day-date-col" class:is-today={date === data.today}>
 					{formatDayHeader(date)}
 				</div>
@@ -689,7 +689,7 @@
 
 {#snippet dayColsList(dates: string[])}
 	{#each dates as date}
-		<div class="day-col">
+		<div class="day-col" class:is-past={date < data.today}>
 			<div class="day-col-header" class:today-col={date === data.today}>
 				{formatDayHeader(date)}
 			</div>
@@ -1113,11 +1113,16 @@
 		bind:this={entryForm}
 		class="entry-popup"
 		style="top: {editingPopup.top}px; left: {editingPopup.left}px; width: {editingPopup.width}px;"
+		onkeydown={(e) => { if (e.key === 'Escape') { e.preventDefault(); closeEditing(); } }}
 	>
 		<input type="hidden" name="date" value={editingPopup.date} />
 		<input type="hidden" name="slot" value={editingPopup.slot} />
 		<input type="hidden" name="course" value={editingPopup.course} />
 		<input type="hidden" name="recipeId" value={selectedRecipeId ?? ''} />
+		<div class="entry-popup-header">
+			<span class="entry-popup-title">Mahlzeit wählen</span>
+			<button type="button" class="entry-popup-close" onclick={closeEditing} aria-label="Schliessen">✕</button>
+		</div>
 		<div class="combobox">
 			<input
 				type="text"
@@ -1668,6 +1673,36 @@
 		min-width: 200px;
 	}
 
+	.entry-popup-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.entry-popup-title {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--text-muted);
+	}
+
+	.entry-popup-close {
+		background: none;
+		border: none;
+		font-size: 0.9rem;
+		color: var(--text-muted);
+		cursor: pointer;
+		padding: 0.15rem 0.35rem;
+		line-height: 1;
+		border-radius: 4px;
+		flex-shrink: 0;
+	}
+
+	.entry-popup-close:hover {
+		color: var(--red);
+		background: #fdf0f0;
+	}
+
 	.entry-select,
 	.entry-input {
 		width: 100%;
@@ -1759,6 +1794,10 @@
 		margin-bottom: 0.5rem;
 		border-radius: var(--radius);
 		box-shadow: var(--shadow);
+	}
+
+	.day-card.is-past {
+		opacity: 0.55;
 	}
 
 	/* Rotated date sidebar — reads bottom to top */
@@ -2190,6 +2229,10 @@
 
 		.day-col:last-child {
 			border-right: none;
+		}
+
+		.day-col.is-past {
+			opacity: 0.55;
 		}
 
 		.day-col-header {

@@ -37,7 +37,10 @@ export const basketItems = pgTable('basket_items', {
 	displayText: text('display_text').notNull(),
 	matchKey: text('match_key').notNull(),
 	permanent: boolean('permanent').notNull().default(false),
-	deliveryDate: date('delivery_date')
+	deliveryDate: date('delivery_date'),
+	// True for items typed in by hand (vs. imported by the Gemüsekorb sync).
+	// Keeps them safe from the sync's delete-and-reinsert, independently of deliveryDate.
+	manual: boolean('manual').notNull().default(false)
 });
 
 export const mealPlanEntries = pgTable(

@@ -25,7 +25,7 @@ export type FoobyRecipe = {
  */
 const PAGE_SIZE = 10;
 
-export async function searchFooby(query: string, page = 0): Promise<FoobySearchResult[]> {
+export async function searchFooby(query: string, page = 0): Promise<{ results: FoobySearchResult[]; total: number }> {
 	const url = new URL('https://fooby.ch/hawaii_search.sri');
 	url.searchParams.set('query', query);
 	url.searchParams.set('lang', 'de');

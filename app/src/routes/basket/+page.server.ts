@@ -53,7 +53,22 @@ export const actions: Actions = {
 		if (!displayText) return fail(400, { message: 'Bitte einen Eintrag eingeben.' });
 		const weekStart = getWeekStart();
 		const matchKey = generateBasketMatchKey(displayText);
-		await db.insert(basketItems).values({ weekStart, displayText, matchKey, deliveryDate: null });
+
+		// Inherit this week's known delivery date (if any) so manually added items are
+		// gated the same as synced ones instead of being usable for the whole week.
+		const [known] = await db
+			.select({ deliveryDate: basketItems.deliveryDate })
+			.from(basketItems)
+			.where(and(eq(basketItems.weekStart, weekStart), isNotNull(basketItems.deliveryDate)))
+			.limit(1);
+
+		await db.insert(basketItems).values({
+			weekStart,
+			displayText,
+			matchKey,
+			deliveryDate: known?.deliveryDate ?? null,
+			manual: true
+		});
 	},
 
 	remove: async ({ request, locals }) => {
@@ -85,15 +100,16 @@ export const actions: Actions = {
 
 		const weekStart = getWeekStart();
 
-		// Delete only previously imported items for this delivery (leave manually added items alone)
+		// Delete only previously imported items for this delivery (leave manually added items alone —
+		// they can now carry the same deliveryDate, so the manual flag is what protects them here).
 		if (deliveryDate) {
 			await db.delete(basketItems).where(
-				and(eq(basketItems.weekStart, weekStart), eq(basketItems.deliveryDate, deliveryDate))
+				and(eq(basketItems.weekStart, weekStart), eq(basketItems.deliveryDate, deliveryDate), eq(basketItems.manual, false))
 			);
 		} else {
 			// No delivery date — fall back to replacing all imported items
 			await db.delete(basketItems).where(
-				and(eq(basketItems.weekStart, weekStart), isNotNull(basketItems.deliveryDate))
+				and(eq(basketItems.weekStart, weekStart), isNotNull(basketItems.deliveryDate), eq(basketItems.manual, false))
 			);
 		}
 

@@ -92,6 +92,20 @@
       "when": 1775606409000,
       "tag": "0012_transient_recipes",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1775606410000,
+      "tag": "0013_basket_manual_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1775606411000,
+      "tag": "0014_meal_skip_shopping",
+      "breakpoints": true
     }
   ]
 }

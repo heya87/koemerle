@@ -497,8 +497,31 @@ export const actions: Actions = {
 
 		const recipeById = new Map(allRecipes.map((r) => [r.id, r]));
 
+		type PlanSuggestionEntry = {
+			date: string;
+			slot: Slot;
+			course: Course;
+			recipeId: number | null;
+			recipeName: string | null;
+			recipeUrl: string | null;
+			notNeeded: boolean;
+			claudeSuggested: boolean;
+			isNew: boolean;
+			newMeal: {
+				name: string;
+				recipeUrl: string | null;
+				ingredients: string;
+				instructions: string;
+				kcal: number | null;
+				fatG: number | null;
+				carbsG: number | null;
+				proteinG: number | null;
+				permanent: boolean;
+			} | null;
+		};
+
 		// Build local suggestion entries (claudeSuggested: false)
-		const localEntries = localResults
+		const localEntries: PlanSuggestionEntry[] = localResults
 			.filter((e) => !e.notNeeded)
 			.map((e) => ({
 				date: e.date,
@@ -514,7 +537,7 @@ export const actions: Actions = {
 			}));
 
 		// Step 3: ask Claude only about remaining empty slots
-		let claudeEntries: typeof localEntries = [];
+		let claudeEntries: PlanSuggestionEntry[] = [];
 		if (emptyForClaude.length > 0) {
 			const basketList = basket.map((b) => b.displayText).join(', ') || 'keine Angaben';
 			const availableRecipes = allRecipes
@@ -659,11 +682,17 @@ export const actions: Actions = {
 				(e) => isValidDate(e.date) && ['lunch', 'dinner'].includes(e.slot) && emptySlotKeys.has(`${e.date}-${e.slot}`)
 			);
 
-			// Use Fooby data cached during tool loop, fall back to Claude's text
-			claudeEntries = filteredParsed.map((e) => {
-					const rid = e.recipeId && recipeById.has(e.recipeId) ? e.recipeId : null;
+			// Use Fooby data cached during tool loop. Entries without a real, fetched
+			// Fooby recipe are dropped — never fall back to a self-invented meal.
+			// Recipes already used (outside the range, by local suggestions, or by an
+			// earlier Claude entry in this same response) are rejected here too — Claude
+			// is told not to repeat a recipe, but nothing else in this codepath enforces it.
+			const claimedIds = new Set(allUsedIds);
+			claudeEntries = filteredParsed.flatMap((e) => {
+					const rid = e.recipeId && recipeById.has(e.recipeId) && !claimedIds.has(e.recipeId) ? e.recipeId : null;
 					if (rid !== null) {
-						return {
+						claimedIds.add(rid);
+						return [{
 							date: e.date,
 							slot: e.slot as Slot,
 							course: 'main' as Course,
@@ -674,49 +703,37 @@ export const actions: Actions = {
 							claudeSuggested: true,
 							isNew: false,
 							newMeal: null
-						};
+						}];
 					}
 
-					let ingredients = e.ingredients ?? '';
-					let instructions = e.instructions ?? '';
-					let kcal = e.kcal ?? null;
-					let fatG = e.fatG ?? null;
-					let carbsG = e.carbsG ?? null;
-					let proteinG = e.proteinG ?? null;
-
-					if (e.recipeUrl) {
-						const fooby = fetchedFoobyRecipes.get(e.recipeUrl);
-						if (fooby) {
-							ingredients = fooby.ingredients;
-							kcal = fooby.kcal;
-							fatG = fooby.fatG;
-							carbsG = fooby.carbsG;
-							proteinG = fooby.proteinG;
-						}
+					const fooby = e.recipeUrl ? fetchedFoobyRecipes.get(e.recipeUrl) : null;
+					if (!fooby) {
+						console.warn('[Claude] dropping slot without a fetched Fooby recipe:', e.date, e.slot, e.recipeName);
+						return [];
 					}
 
-					return {
+					return [{
 						date: e.date,
 						slot: e.slot as Slot,
 						course: 'main' as Course,
 						recipeId: null,
-						recipeName: e.recipeName ?? null,
+						recipeName: e.recipeName ?? fooby.name,
 						recipeUrl: null,
 						notNeeded: false,
 						claudeSuggested: true,
 						isNew: true,
 						newMeal: {
-							name: e.recipeName ?? '',
-							recipeUrl: e.recipeUrl ?? null,
-							ingredients,
-							instructions,
-							kcal,
-							fatG,
-							carbsG,
-							proteinG,
+							name: e.recipeName ?? fooby.name,
+							recipeUrl: fooby.url,
+							ingredients: fooby.ingredients,
+							instructions: e.instructions ?? '',
+							kcal: fooby.kcal,
+							fatG: fooby.fatG,
+							carbsG: fooby.carbsG,
+							proteinG: fooby.proteinG,
 							permanent: false
 						}
-					};
+					}];
 				});
 		}
 
