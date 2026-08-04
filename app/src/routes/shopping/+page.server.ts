@@ -35,10 +35,7 @@ async function generateItems(planStart: string, planEnd: string) {
 		.from(mealPlanEntries)
 		.where(and(gte(mealPlanEntries.date, planStart), lte(mealPlanEntries.date, planEnd)));
 
-	const recipeIds = entries
-		.filter((e) => !e.skipShopping)
-		.map((e) => e.recipeId)
-		.filter((id): id is number => id !== null);
+	const recipeIds = entries.map((e) => e.recipeId).filter((id): id is number => id !== null);
 	const [plannedRecipes, allRecipes] = await Promise.all([
 		recipeIds.length > 0
 			? db.select().from(recipes).where(inArray(recipes.id, recipeIds))

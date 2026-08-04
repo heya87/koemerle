@@ -261,7 +261,6 @@ export const actions: Actions = {
 			recipeId: number | null;
 			recipeName?: string | null;
 			notNeeded: boolean;
-			skipShopping?: boolean;
 			newMeal?: NewMeal | null;
 		}[];
 		try {
@@ -310,7 +309,6 @@ export const actions: Actions = {
 					course: e.course ?? 'main',
 					recipeId: e.notNeeded ? null : (e.recipeId ?? null),
 					freeText: e.notNeeded ? NOT_NEEDED : null,
-					skipShopping: e.skipShopping ?? false,
 					updatedBy: userName,
 					updatedAt: new Date()
 				}))
@@ -422,34 +420,6 @@ export const actions: Actions = {
 			message: `${userName} hat ${formatDateLabel(date)} ${SLOT_LABELS[slot]} ${COURSE_LABELS[course] ?? ''} geleert`,
 			createdAt: new Date()
 		});
-	},
-
-	toggleSkipShopping: async ({ request, locals }) => {
-		const user = locals.user;
-		if (!user) return fail(401);
-
-		const fd = await request.formData();
-		const date = fd.get('date')?.toString() ?? '';
-		const slot = fd.get('slot')?.toString() as Slot;
-		const course = (fd.get('course')?.toString() ?? 'main') as Course;
-		const skipShopping = fd.get('skipShopping')?.toString() === 'true';
-
-		if (!isValidDate(date) || !['lunch', 'dinner'].includes(slot)) {
-			return fail(400, { message: 'Ungültiger Slot' });
-		}
-
-		const userName = user.name ?? user.email;
-
-		await db
-			.update(mealPlanEntries)
-			.set({ skipShopping, updatedBy: userName, updatedAt: new Date() })
-			.where(
-				and(
-					eq(mealPlanEntries.date, date),
-					eq(mealPlanEntries.slot, slot),
-					eq(mealPlanEntries.course, course)
-				)
-			);
 	},
 
 	getClaudeSuggestion: async ({ request, locals }) => {

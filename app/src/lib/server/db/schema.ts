@@ -52,8 +52,6 @@ export const mealPlanEntries = pgTable(
 		course: text('course').notNull().default('main'),
 		recipeId: integer('recipe_id').references(() => recipes.id),
 		freeText: text('free_text'),
-		// We already have these ingredients — leave them out of the generated shopping list.
-		skipShopping: boolean('skip_shopping').notNull().default(false),
 		updatedBy: text('updated_by').notNull(),
 		updatedAt: timestamp('updated_at').notNull().defaultNow()
 	},
