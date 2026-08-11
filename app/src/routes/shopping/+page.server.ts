@@ -16,31 +16,31 @@ import {
 import { eq, and, gte, lte, inArray, isNull } from 'drizzle-orm';
 import { getWeekStart, buildAliasMap, createKeyNormalizer } from '$lib/server/ingredients';
 import { computeShoppingList } from '$lib/server/shopping';
-import { getBringLists } from '$lib/server/bring';
-import { env } from '$env/dynamic/private';
+import { getBringConfig, getBringLists } from '$lib/server/bring';
+import { getFamily } from '$lib/server/families';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const BringApi = createRequire(import.meta.url)('bring-shopping') as any;
 
-async function generateItems(planStart: string, planEnd: string) {
+async function generateItems(familyId: number, planStart: string, planEnd: string) {
 	const weekStart = getWeekStart();
 	const [basket, lager, groups] = await Promise.all([
-		db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
-		db.select().from(lagerItems),
+		db.select().from(basketItems).where(and(eq(basketItems.familyId, familyId), eq(basketItems.weekStart, weekStart))),
+		db.select().from(lagerItems).where(eq(lagerItems.familyId, familyId)),
 		db.select().from(ingredientGroups)
 	]);
 
 	const entries = await db
 		.select()
 		.from(mealPlanEntries)
-		.where(and(gte(mealPlanEntries.date, planStart), lte(mealPlanEntries.date, planEnd)));
+		.where(and(eq(mealPlanEntries.familyId, familyId), gte(mealPlanEntries.date, planStart), lte(mealPlanEntries.date, planEnd)));
 
 	const recipeIds = entries.map((e) => e.recipeId).filter((id): id is number => id !== null);
 	const [plannedRecipes, allRecipes] = await Promise.all([
 		recipeIds.length > 0
-			? db.select().from(recipes).where(inArray(recipes.id, recipeIds))
+			? db.select().from(recipes).where(and(eq(recipes.familyId, familyId), inArray(recipes.id, recipeIds)))
 			: Promise.resolve([]),
-		db.select({ name: recipes.name, ingredients: recipes.ingredients }).from(recipes)
+		db.select({ id: recipes.id, name: recipes.name, ingredients: recipes.ingredients }).from(recipes).where(eq(recipes.familyId, familyId))
 	]);
 
 	const normalize = createKeyNormalizer(buildAliasMap(groups));
@@ -56,11 +56,14 @@ async function generateItems(planStart: string, planEnd: string) {
 	return { items, planStart, planEnd };
 }
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
+	const familyId = locals.user!.familyId;
+	const family = await getFamily(familyId);
+
 	const weekStart = getWeekStart();
 	const [sessions, metaRows] = await Promise.all([
-		db.select().from(shoppingSessions).where(isNull(shoppingSessions.sentAt)).limit(1),
-		db.select().from(planMeta).limit(1)
+		db.select().from(shoppingSessions).where(and(eq(shoppingSessions.familyId, familyId), isNull(shoppingSessions.sentAt))).limit(1),
+		db.select().from(planMeta).where(eq(planMeta.familyId, familyId)).limit(1)
 	]);
 	const session = sessions[0] ?? null;
 	const meta = metaRows[0] ?? null;
@@ -72,8 +75,8 @@ export const load: PageServerLoad = async () => {
 				.where(and(eq(shoppingItems.sessionId, session.id), eq(shoppingItems.excluded, false)))
 		: [];
 
-	const bringLists = getBringLists();
-	const prefs = rawItems.length > 0 ? await db.select().from(ingredientListPrefs) : [];
+	const bringLists = family ? await getBringLists(family) : [];
+	const prefs = rawItems.length > 0 ? await db.select().from(ingredientListPrefs).where(eq(ingredientListPrefs.familyId, familyId)) : [];
 	const prefByKey = new Map(prefs.map((p) => [p.matchKey, p.listIndex]));
 	const items = rawItems.map((item) => ({
 		...item,
@@ -92,31 +95,33 @@ export const load: PageServerLoad = async () => {
 export const actions: Actions = {
 	createSession: async ({ locals, request }) => {
 		if (!locals.user) return fail(401);
+		const familyId = locals.user.familyId;
 
 		const formData = await request.formData();
 		const planStart = formData.get('planStart') as string | null;
 		const planEnd = formData.get('planEnd') as string | null;
 		if (!planStart || !planEnd) return fail(400, { message: 'Datum fehlt.' });
 
-		const generated = await generateItems(planStart, planEnd);
+		const generated = await generateItems(familyId, planStart, planEnd);
 
-		// Remove any existing unsent sessions
+		// Remove any existing unsent sessions for this family
 		const existing = await db
 			.select()
 			.from(shoppingSessions)
-			.where(isNull(shoppingSessions.sentAt));
+			.where(and(eq(shoppingSessions.familyId, familyId), isNull(shoppingSessions.sentAt)));
 		for (const s of existing) {
 			await db.delete(shoppingSessions).where(eq(shoppingSessions.id, s.id));
 		}
 
 		const [session] = await db
 			.insert(shoppingSessions)
-			.values({ planStart: generated.planStart, planEnd: generated.planEnd })
+			.values({ familyId, planStart: generated.planStart, planEnd: generated.planEnd })
 			.returning();
 
 		if (generated.items.length > 0) {
 			await db.insert(shoppingItems).values(
 				generated.items.map((item) => ({
+					familyId,
 					sessionId: session.id,
 					displayText: item.displayText,
 					matchKey: item.matchKey
@@ -129,6 +134,7 @@ export const actions: Actions = {
 
 	updateDates: async ({ locals, request }) => {
 		if (!locals.user) return fail(401);
+		const familyId = locals.user.familyId;
 
 		const formData = await request.formData();
 		const sessionId = Number(formData.get('sessionId'));
@@ -136,17 +142,18 @@ export const actions: Actions = {
 		const planEnd = formData.get('planEnd') as string | null;
 		if (!sessionId || !planStart || !planEnd) return fail(400);
 
-		const generated = await generateItems(planStart, planEnd);
+		const generated = await generateItems(familyId, planStart, planEnd);
 
-		await db.delete(shoppingItems).where(eq(shoppingItems.sessionId, sessionId));
+		await db.delete(shoppingItems).where(and(eq(shoppingItems.sessionId, sessionId), eq(shoppingItems.familyId, familyId)));
 		await db
 			.update(shoppingSessions)
 			.set({ planStart, planEnd })
-			.where(eq(shoppingSessions.id, sessionId));
+			.where(and(eq(shoppingSessions.id, sessionId), eq(shoppingSessions.familyId, familyId)));
 
 		if (generated.items.length > 0) {
 			await db.insert(shoppingItems).values(
 				generated.items.map((item) => ({
+					familyId,
 					sessionId,
 					displayText: item.displayText,
 					matchKey: item.matchKey
@@ -164,7 +171,7 @@ export const actions: Actions = {
 		const itemId = Number(formData.get('itemId'));
 		if (!itemId) return fail(400);
 
-		await db.update(shoppingItems).set({ excluded: true }).where(eq(shoppingItems.id, itemId));
+		await db.update(shoppingItems).set({ excluded: true }).where(and(eq(shoppingItems.id, itemId), eq(shoppingItems.familyId, locals.user.familyId)));
 		return { excluded: itemId };
 	},
 
@@ -175,19 +182,22 @@ export const actions: Actions = {
 		const sessionId = Number(formData.get('sessionId'));
 		if (!sessionId) return fail(400);
 
-		await db.delete(shoppingSessions).where(eq(shoppingSessions.id, sessionId));
+		await db.delete(shoppingSessions).where(and(eq(shoppingSessions.id, sessionId), eq(shoppingSessions.familyId, locals.user.familyId)));
 		return { discarded: true };
 	},
 
 	sendToBring: async ({ locals, request }) => {
 		if (!locals.user) return fail(401);
+		const familyId = locals.user.familyId;
 
-		const { BRING_EMAIL, BRING_PASSWORD, BRING_LIST_ID } = env;
-		if (!BRING_EMAIL || !BRING_PASSWORD) {
-			return fail(400, { message: 'Bring! Zugangsdaten fehlen (BRING_EMAIL / BRING_PASSWORD).' });
+		const family = await getFamily(familyId);
+		const bringConfig = family ? await getBringConfig(family) : null;
+		if (!bringConfig) {
+			return fail(400, { message: 'Bring! ist für eure Familie nicht eingerichtet (siehe Einstellungen).' });
 		}
-		if (!BRING_LIST_ID) {
-			return fail(400, { message: 'BRING_LIST_ID fehlt in den Umgebungsvariablen.' });
+		const defaultListId = bringConfig.lists[0]?.id;
+		if (!defaultListId) {
+			return fail(400, { message: 'Keine Bring!-Liste konfiguriert (siehe Einstellungen).' });
 		}
 
 		const formData = await request.formData();
@@ -200,25 +210,25 @@ export const actions: Actions = {
 		const items = await db
 			.select()
 			.from(shoppingItems)
-			.where(and(eq(shoppingItems.sessionId, sessionId), eq(shoppingItems.excluded, false)));
+			.where(and(eq(shoppingItems.sessionId, sessionId), eq(shoppingItems.familyId, familyId), eq(shoppingItems.excluded, false)));
 
 		if (items.length === 0) {
 			await db
 				.update(shoppingSessions)
 				.set({ sentAt: new Date() })
-				.where(eq(shoppingSessions.id, sessionId));
+				.where(and(eq(shoppingSessions.id, sessionId), eq(shoppingSessions.familyId, familyId)));
 			return { sent: 0 };
 		}
 
 		const byList: Record<string, string[]> = {};
 		for (const item of items) {
-			const listId = assignments[item.displayText] ?? BRING_LIST_ID;
+			const listId = assignments[item.displayText] ?? defaultListId;
 			if (!byList[listId]) byList[listId] = [];
 			byList[listId].push(item.displayText);
 		}
 
 		try {
-			const bring = new BringApi({ mail: BRING_EMAIL, password: BRING_PASSWORD });
+			const bring = new BringApi({ mail: bringConfig.email, password: bringConfig.password });
 			await bring.login();
 
 			let sent = 0;
@@ -238,17 +248,16 @@ export const actions: Actions = {
 
 			// Learn from whichever list each ingredient actually went to, so the next
 			// shopping list defaults to it without asking again.
-			const bringLists = getBringLists();
-			if (bringLists.length === 2) {
+			if (bringConfig.lists.length === 2) {
 				await Promise.all(
 					items.map((item) => {
-						const listId = assignments[item.displayText] ?? BRING_LIST_ID;
-						const listIndex = bringLists.findIndex((l) => l.id === listId);
+						const listId = assignments[item.displayText] ?? defaultListId;
+						const listIndex = bringConfig.lists.findIndex((l) => l.id === listId);
 						if (listIndex === -1) return null;
 						return db
 							.insert(ingredientListPrefs)
-							.values({ matchKey: item.matchKey, listIndex })
-							.onConflictDoUpdate({ target: ingredientListPrefs.matchKey, set: { listIndex } });
+							.values({ familyId, matchKey: item.matchKey, listIndex })
+							.onConflictDoUpdate({ target: [ingredientListPrefs.familyId, ingredientListPrefs.matchKey], set: { listIndex } });
 					})
 				);
 			}
@@ -256,7 +265,7 @@ export const actions: Actions = {
 			await db
 				.update(shoppingSessions)
 				.set({ sentAt: new Date() })
-				.where(eq(shoppingSessions.id, sessionId));
+				.where(and(eq(shoppingSessions.id, sessionId), eq(shoppingSessions.familyId, familyId)));
 			return { sent };
 		} catch (e) {
 			console.error('Bring! error:', e);

@@ -35,7 +35,7 @@ export const actions: Actions = {
 
 		const matchKeys = generateMatchKeys(ingredients);
 
-		await db.insert(recipes).values({ name, ingredients, matchKeys, recipeUrl, servings, course, preparation, kcal, fatG, carbsG, proteinG });
+		await db.insert(recipes).values({ familyId: locals.user.familyId, name, ingredients, matchKeys, recipeUrl, servings, course, preparation, kcal, fatG, carbsG, proteinG });
 		return redirect(303, '/recipes');
 	}
 };

@@ -1,9 +1,10 @@
 import type { LayoutServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { ingredientGroups, plantFoods, cronRuns, siteSettings, ingredientListPrefs } from '$lib/server/db/schema';
-import { desc } from 'drizzle-orm';
+import { ingredientGroups, plantFoods, ingredientListPrefs } from '$lib/server/db/schema';
+import { eq } from 'drizzle-orm';
 import { DEFAULT_CLAUDE_PROMPT } from '$lib/server/claude';
 import { getBringLists } from '$lib/server/bring';
+import { getFamily } from '$lib/server/families';
 
 export const load: LayoutServerLoad = async (event) => {
 	if (!event.locals.user) {
@@ -11,26 +12,46 @@ export const load: LayoutServerLoad = async (event) => {
 			user: null,
 			ingredientGroups: [],
 			plantFoods: [],
-			cronRuns: [],
 			claudePrompt: DEFAULT_CLAUDE_PROMPT,
 			listPrefs: [],
-			bringLists: []
+			bringLists: [],
+			family: null
 		};
 	}
-	const [groups, plantFoodRows, cronRunRows, settingsRows, listPrefRows] = await Promise.all([
+
+	const familyId = event.locals.user.familyId;
+	const family = await getFamily(familyId);
+	if (!family) {
+		// Should never happen (FK-enforced) — fail loudly rather than silently show empty data.
+		throw new Error(`User ${event.locals.user.id} references missing family ${familyId}`);
+	}
+
+	const [groups, plantFoodRows, listPrefRows, bringLists] = await Promise.all([
 		db.select().from(ingredientGroups).orderBy(ingredientGroups.label),
 		db.select().from(plantFoods).orderBy(plantFoods.label),
-		db.select().from(cronRuns).orderBy(desc(cronRuns.ranAt)).limit(50),
-		db.select().from(siteSettings).limit(1),
-		db.select().from(ingredientListPrefs).orderBy(ingredientListPrefs.matchKey)
+		db.select().from(ingredientListPrefs).where(eq(ingredientListPrefs.familyId, familyId)).orderBy(ingredientListPrefs.matchKey),
+		getBringLists(family)
 	]);
+
 	return {
 		user: event.locals.user,
 		ingredientGroups: groups,
 		plantFoods: plantFoodRows,
-		cronRuns: cronRunRows,
-		claudePrompt: settingsRows[0]?.claudePromptTemplate ?? DEFAULT_CLAUDE_PROMPT,
+		claudePrompt: family.claudePromptTemplate ?? DEFAULT_CLAUDE_PROMPT,
 		listPrefs: listPrefRows,
-		bringLists: getBringLists()
+		bringLists,
+		family: {
+			id: family.id,
+			name: family.name,
+			claudeEnabled: family.claudeEnabled,
+			bringEmail: family.bringEmail ?? '',
+			bringListId: family.bringListId ?? '',
+			bringListName: family.bringListName ?? '',
+			bringListId2: family.bringListId2 ?? '',
+			bringListName2: family.bringListName2 ?? '',
+			hasBringPassword: !!family.bringPasswordEnc,
+			bioaboEmail: family.bioaboEmail ?? '',
+			hasBioaboPassword: !!family.bioaboPasswordEnc
+		}
 	};
 };

@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
-import { pgTable, text, timestamp, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, index } from "drizzle-orm/pg-core";
+import { families } from "./family.schema";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -7,6 +8,11 @@ export const user = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").default(false).notNull(),
   image: text("image"),
+  // Which family this login belongs to — the tenant boundary for all app data.
+  familyId: integer("family_id").notNull().references(() => families.id, { onDelete: "cascade" }),
+  // Platform admin: can create families/members and issue setup/reset links in /admin.
+  // Not the same as "belongs to a family" — every user has exactly one family either way.
+  isAdmin: boolean("is_admin").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()

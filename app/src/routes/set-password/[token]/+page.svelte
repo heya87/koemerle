@@ -1,37 +1,41 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { page } from '$app/state';
-	import type { ActionData } from './$types';
+	import type { ActionData, PageData } from './$types';
 
-	let { form }: { form: ActionData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	const REASON_LABELS: Record<string, string> = {
+		not_found: 'Dieser Link ist ungültig.',
+		used: 'Dieser Link wurde bereits verwendet.',
+		expired: 'Dieser Link ist abgelaufen. Bitte einen neuen anfordern.'
+	};
 </script>
 
 <div class="login-wrapper">
 	<div class="login-card">
 		<h1 class="app-name">Kömerle</h1>
-		<p class="tagline">Wochenplanung leicht gemacht</p>
 
-		{#if page.url.searchParams.get('activated')}
-			<p class="success">Passwort gespeichert — du kannst dich jetzt anmelden.</p>
+		{#if !data.valid}
+			<p class="tagline">{REASON_LABELS[data.reason ?? ''] ?? 'Dieser Link ist ungültig.'}</p>
+		{:else}
+			<p class="tagline">Passwort festlegen</p>
+			<form method="post" use:enhance>
+				<label>
+					Neues Passwort
+					<input type="password" name="password" required minlength="8" autocomplete="new-password" />
+				</label>
+				<label>
+					Passwort bestätigen
+					<input type="password" name="confirm" required minlength="8" autocomplete="new-password" />
+				</label>
+
+				{#if form?.message}
+					<p class="error">{form.message}</p>
+				{/if}
+
+				<button type="submit">Passwort speichern</button>
+			</form>
 		{/if}
-
-		<form method="post" use:enhance>
-			<label>
-				E-Mail
-				<input type="email" name="email" required autocomplete="email" />
-			</label>
-
-			<label>
-				Passwort
-				<input type="password" name="password" required autocomplete="current-password" />
-			</label>
-
-			{#if form?.message}
-				<p class="error">{form.message}</p>
-			{/if}
-
-			<button type="submit">Anmelden</button>
-		</form>
 	</div>
 </div>
 
@@ -120,15 +124,7 @@
 		background: var(--green-dark);
 	}
 
-	.success {
-		text-align: center;
-		color: var(--green-dark, var(--green));
-		font-size: 0.85rem;
-		margin: -1rem 0 0;
-	}
-
 	.error {
-		text-align: center;
 		color: var(--red, #c0392b);
 		font-size: 0.85rem;
 		margin: 0;

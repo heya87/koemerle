@@ -9,7 +9,7 @@
 	let { children, data }: { children: any; data: LayoutData } = $props();
 
 	let settingsDialog: HTMLDialogElement | undefined = $state();
-	let activeTab: 'groups' | 'plants' | 'stores' | 'recipes' | 'cron' | 'claude' = $state('groups');
+	let activeTab: 'account' | 'family' | 'groups' | 'plants' | 'stores' | 'recipes' | 'claude' = $state('account');
 	let newListPrefKey = $state('');
 	let newListPrefIndex = $state(0);
 	let claudePromptValue = $state('');
@@ -18,6 +18,10 @@
 	let importResult: { imported: number; skipped: number } | null = $state(null);
 	let selectedFileName = $state('');
 	let mobileMenuOpen = $state(false);
+	let passwordMessage: { type: 'success' | 'error'; text: string } | null = $state(null);
+	let bringListsFound: { id: string; name: string }[] | null = $state(null);
+	let bringLookupMessage: { type: 'success' | 'error'; text: string } | null = $state(null);
+	let familyMessage: { type: 'success' | 'error'; text: string } | null = $state(null);
 
 	$effect(() => {
 		page.url.pathname;
@@ -28,6 +32,10 @@
 		newGroupLabel = '';
 		newGroupKeys = '';
 		claudePromptValue = data.claudePrompt ?? '';
+		passwordMessage = null;
+		bringListsFound = null;
+		bringLookupMessage = null;
+		familyMessage = null;
 		settingsDialog?.showModal();
 	}
 
@@ -56,6 +64,9 @@
 			<a href="/lager" class:active={page.url.pathname.startsWith('/lager')}>Vorratskammer</a>
 			<a href="/shopping" class:active={page.url.pathname.startsWith('/shopping')}>Einkaufen</a>
 			<a href="/clara" class:active={page.url.pathname.startsWith('/clara')}>Clara</a>
+			{#if data.user.isAdmin}
+				<a href="/admin" class:active={page.url.pathname.startsWith('/admin')}>Admin</a>
+			{/if}
 		</nav>
 		<div class="user-area">
 			<span class="username">{data.user.name}</span>
@@ -82,6 +93,9 @@
 			<a href="/lager" class:active={page.url.pathname.startsWith('/lager')}>Vorratskammer</a>
 			<a href="/shopping" class:active={page.url.pathname.startsWith('/shopping')}>Einkaufen</a>
 			<a href="/clara" class:active={page.url.pathname.startsWith('/clara')}>Clara</a>
+			{#if data.user.isAdmin}
+				<a href="/admin" class:active={page.url.pathname.startsWith('/admin')}>Admin</a>
+			{/if}
 			<div class="mobile-menu-sep"></div>
 			<button type="button" onclick={() => { mobileMenuOpen = false; openSettings(); }}>Einstellungen</button>
 			<form method="post" action="/logout" use:enhance>
@@ -98,6 +112,18 @@
 			</div>
 
 			<nav class="settings-tabs">
+				<button
+					type="button"
+					class="settings-tab"
+					class:active={activeTab === 'account'}
+					onclick={() => (activeTab = 'account')}
+				>Konto</button>
+				<button
+					type="button"
+					class="settings-tab"
+					class:active={activeTab === 'family'}
+					onclick={() => (activeTab = 'family')}
+				>Familie</button>
 				<button
 					type="button"
 					class="settings-tab"
@@ -125,16 +151,184 @@
 				<button
 					type="button"
 					class="settings-tab"
-					class:active={activeTab === 'cron'}
-					onclick={() => (activeTab = 'cron')}
-				>Cron</button>
-				<button
-					type="button"
-					class="settings-tab"
 					class:active={activeTab === 'claude'}
 					onclick={() => { activeTab = 'claude'; claudePromptValue = data.claudePrompt ?? ''; }}
 				>Claude</button>
 			</nav>
+
+			{#if activeTab === 'account'}
+				<div class="settings-section">
+					<div class="settings-info-box">Eigenes Passwort ändern.</div>
+
+					<form
+						method="post"
+						action="/settings?/changePassword"
+						class="family-form"
+						use:enhance={({ formElement }) => async ({ result }) => {
+							if (result.type === 'success') {
+								passwordMessage = { type: 'success', text: '✓ Passwort geändert.' };
+								formElement.reset();
+							} else if (result.type === 'failure') {
+								passwordMessage = { type: 'error', text: (result.data?.message as string) ?? 'Fehler beim Ändern.' };
+							} else {
+								passwordMessage = { type: 'error', text: 'Unerwarteter Fehler — bitte nochmal versuchen.' };
+							}
+						}}
+					>
+						<label>
+							Aktuelles Passwort
+							<input type="password" name="currentPassword" required autocomplete="current-password" />
+						</label>
+						<label>
+							Neues Passwort
+							<input type="password" name="newPassword" required minlength="8" autocomplete="new-password" />
+						</label>
+						<label>
+							Neues Passwort bestätigen
+							<input type="password" name="confirm" required minlength="8" autocomplete="new-password" />
+						</label>
+						<button type="submit" class="btn-save-prompt">Passwort ändern</button>
+						{#if passwordMessage}
+							<div class="feedback-box" class:feedback-success={passwordMessage.type === 'success'} class:feedback-error={passwordMessage.type === 'error'}>
+								{passwordMessage.text}
+							</div>
+						{/if}
+					</form>
+				</div>
+			{/if}
+
+			{#if activeTab === 'family'}
+				<div class="settings-section">
+					<div class="settings-info-box">
+						Diese Einstellungen gelten nur für eure Familie — Rezepte, Plan und Einkaufsliste
+						sind zwischen Familien getrennt.
+					</div>
+
+					{#if familyMessage}
+						<div class="feedback-box" class:feedback-success={familyMessage.type === 'success'} class:feedback-error={familyMessage.type === 'error'}>
+							{familyMessage.text}
+						</div>
+					{/if}
+
+					<form
+						method="post"
+						action="/settings?/renameFamily"
+						class="family-form"
+						use:enhance={() => async ({ result }) => {
+							if (result.type === 'success') {
+								familyMessage = { type: 'success', text: '✓ Gespeichert.' };
+								await invalidateAll();
+							} else if (result.type === 'failure') {
+								familyMessage = { type: 'error', text: (result.data?.message as string) ?? 'Fehler beim Speichern.' };
+							}
+						}}
+					>
+						<label>
+							Familienname
+							<input type="text" name="name" value={data.family?.name ?? ''} required />
+						</label>
+						<button type="submit" class="btn-save-prompt">Speichern</button>
+					</form>
+
+					<h3 class="family-subheading">Bring!</h3>
+					<div class="settings-info-box">
+						Die Listen-ID findest du, indem du unten "Listen abrufen" klickst, nachdem
+						E-Mail und Passwort ausgefüllt sind — Kömerle meldet sich kurz bei Bring! an
+						und zeigt dir deine Listen mit ihrer ID zum Kopieren.
+					</div>
+					<form
+						method="post"
+						action="/settings?/saveBring"
+						class="family-form"
+						use:enhance={({ submitter }) => {
+							const isLookup = submitter?.getAttribute('formaction')?.includes('lookupBringLists') ?? false;
+							return async ({ result }) => {
+								if (isLookup) {
+									if (result.type === 'success') {
+										bringListsFound = (result.data?.bringListsFound as { id: string; name: string }[]) ?? [];
+										bringLookupMessage = bringListsFound.length > 0 ? null : { type: 'error', text: 'Keine Listen gefunden.' };
+									} else if (result.type === 'failure') {
+										bringListsFound = null;
+										bringLookupMessage = { type: 'error', text: (result.data?.message as string) ?? 'Fehler.' };
+									}
+								} else if (result.type === 'success') {
+									familyMessage = { type: 'success', text: '✓ Gespeichert.' };
+									await invalidateAll();
+								} else if (result.type === 'failure') {
+									familyMessage = { type: 'error', text: (result.data?.message as string) ?? 'Fehler beim Speichern.' };
+								}
+							};
+						}}
+					>
+						<label>
+							E-Mail
+							<input type="email" name="email" value={data.family?.bringEmail ?? ''} />
+						</label>
+						<label>
+							Passwort {#if data.family?.hasBringPassword}<span class="configured">(gespeichert — leer lassen zum Behalten)</span>{/if}
+							<input type="password" name="password" autocomplete="new-password" />
+						</label>
+						<button type="submit" formaction="/settings?/lookupBringLists" class="btn-reset-prompt">Listen abrufen</button>
+
+						{#if bringLookupMessage}
+							<div class="feedback-box feedback-error">{bringLookupMessage.text}</div>
+						{/if}
+						{#if bringListsFound && bringListsFound.length > 0}
+							<div class="bring-lists-found">
+								{#each bringListsFound as list}
+									<div class="bring-list-row">
+										<span>{list.name}</span>
+										<code>{list.id}</code>
+									</div>
+								{/each}
+							</div>
+						{/if}
+
+						<label>
+							Liste 1 — ID
+							<input type="text" name="listId" value={data.family?.bringListId ?? ''} />
+						</label>
+						<label>
+							Liste 1 — Name
+							<input type="text" name="listName" value={data.family?.bringListName ?? ''} />
+						</label>
+						<label>
+							Liste 2 — ID (optional)
+							<input type="text" name="listId2" value={data.family?.bringListId2 ?? ''} />
+						</label>
+						<label>
+							Liste 2 — Name (optional)
+							<input type="text" name="listName2" value={data.family?.bringListName2 ?? ''} />
+						</label>
+						<button type="submit" formaction="/settings?/saveBring" class="btn-save-prompt">Bring! speichern</button>
+					</form>
+
+					<h3 class="family-subheading">Biogmüsabo</h3>
+					<form
+						method="post"
+						action="/settings?/saveBioabo"
+						class="family-form"
+						use:enhance={() => async ({ result }) => {
+							if (result.type === 'success') {
+								familyMessage = { type: 'success', text: '✓ Gespeichert.' };
+								await invalidateAll();
+							} else if (result.type === 'failure') {
+								familyMessage = { type: 'error', text: (result.data?.message as string) ?? 'Fehler beim Speichern.' };
+							}
+						}}
+					>
+						<label>
+							E-Mail
+							<input type="email" name="email" value={data.family?.bioaboEmail ?? ''} />
+						</label>
+						<label>
+							Passwort {#if data.family?.hasBioaboPassword}<span class="configured">(gespeichert — leer lassen zum Behalten)</span>{/if}
+							<input type="password" name="password" autocomplete="new-password" />
+						</label>
+						<button type="submit" class="btn-save-prompt">Biogmüsabo speichern</button>
+					</form>
+				</div>
+			{/if}
 
 			{#if activeTab === 'groups'}
 				<div class="settings-section">
@@ -293,7 +487,7 @@
 				<div class="settings-section">
 					{#if data.bringLists.length < 2}
 						<div class="settings-info-box">
-							Zwei Bring!-Listen sind nicht konfiguriert (BRING_LIST_ID / BRING_LIST_ID_2 fehlen).
+							Zwei Bring!-Listen sind nicht konfiguriert (siehe Tab "Familie").
 							Diese Zuordnung greift erst, sobald beide Listen eingerichtet sind.
 						</div>
 					{:else}
@@ -452,37 +646,6 @@
 							>Auf Standard zurücksetzen</button>
 						</div>
 					</form>
-				</div>
-			{/if}
-
-			{#if activeTab === 'cron'}
-				<div class="settings-section">
-					<div class="settings-info-box">
-						Automatische Gemüsekorb-Synchronisierungen. Läuft gemäss <code>BASKET_SYNC_CRON</code> (Standard: stündlich montags).
-					</div>
-
-					{#if data.cronRuns.length === 0}
-						<p class="empty-synonyms" style="padding: 0.5rem 0;">Noch keine Läufe aufgezeichnet.</p>
-					{:else}
-						<table class="synonym-table">
-							<thead>
-								<tr>
-									<th>Zeit</th>
-									<th>Ergebnis</th>
-									<th>Detail</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each data.cronRuns as run}
-									<tr>
-										<td class="col-time">{new Date(run.ranAt).toLocaleString('de-CH')}</td>
-										<td><span class="outcome-badge outcome-{run.outcome}">{run.outcome}</span></td>
-										<td class="col-detail">{run.detail ?? ''}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					{/if}
 				</div>
 			{/if}
 
@@ -779,6 +942,91 @@
 		padding: 0.75rem 1rem;
 		margin-bottom: 1.25rem;
 		line-height: 1.55;
+	}
+
+	.family-form {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.family-form label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		font-size: 0.8rem;
+		font-weight: 500;
+		color: var(--text-muted);
+	}
+
+	.family-form input {
+		padding: 0.45rem 0.6rem;
+		font-size: 0.875rem;
+		font-family: inherit;
+		border: 1.5px solid var(--border-strong);
+		border-radius: var(--radius);
+		background: var(--bg);
+		color: var(--text);
+	}
+
+	.family-form button {
+		align-self: flex-start;
+	}
+
+	.family-subheading {
+		font-size: 0.9rem;
+		margin: 0 0 0.5rem;
+	}
+
+	.configured {
+		font-weight: 400;
+		color: var(--text-light, var(--text-muted));
+		font-size: 0.75rem;
+	}
+
+	.feedback-box {
+		font-size: 0.875rem;
+		font-weight: 500;
+		padding: 0.6rem 0.9rem;
+		border-radius: var(--radius);
+		border: 1.5px solid transparent;
+	}
+
+	.feedback-success {
+		background: var(--green-light, #eaf4ec);
+		border-color: var(--green);
+		color: var(--green-dark, var(--green));
+	}
+
+	.feedback-error {
+		background: #fdf0f0;
+		border-color: var(--red, #c0392b);
+		color: var(--red, #c0392b);
+	}
+
+	.bring-lists-found {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		background: var(--bg);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		padding: 0.6rem 0.75rem;
+	}
+
+	.bring-list-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		font-size: 0.85rem;
+	}
+
+	.bring-list-row code {
+		font-size: 0.78rem;
+		color: var(--text-muted);
+		user-select: all;
 	}
 
 	.synonym-table {
@@ -1109,34 +1357,6 @@
 		font-size: 0.875rem;
 		color: var(--green);
 	}
-
-	.col-time {
-		white-space: nowrap;
-		font-size: 0.8rem;
-		color: var(--text-muted);
-	}
-
-	.col-detail {
-		font-size: 0.8rem;
-		color: var(--text-muted);
-		word-break: break-word;
-		max-width: 16rem;
-	}
-
-	.outcome-badge {
-		display: inline-block;
-		font-size: 0.72rem;
-		font-weight: 600;
-		padding: 0.15rem 0.45rem;
-		border-radius: 4px;
-		text-transform: uppercase;
-		letter-spacing: 0.03em;
-	}
-
-	.outcome-imported { background: #e6f4ea; color: #2e7d32; }
-	.outcome-already_done { background: #f0f4ff; color: #3949ab; }
-	.outcome-no_delivery { background: #fff8e1; color: #f57f17; }
-	.outcome-error { background: #fdf0f0; color: var(--red); }
 
 	/* ── Bottom tab bar: hidden on mobile (replaced by hamburger) ── */
 	.tab-bar {

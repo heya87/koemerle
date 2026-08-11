@@ -48,6 +48,20 @@ Claude Code is the primary development tool. Keep code readable for someone with
 - Component files should do one thing
 - No unnecessary comments — code should be self-explanatory
 
+## Multi-Family
+
+The app is multi-tenant: every login belongs to a `family` (`user.family_id`), and every
+per-family table (recipes, basket, meal plan, activity log, lager, shopping, Bring!/
+Biogmüsabo credentials) has a `family_id` column. **Any query or mutation on those
+tables must filter by `locals.user.familyId`** — including lookups by a single row id
+(edit/delete/exclude actions), not just listing queries. `ingredient_groups`,
+`plant_foods`, and `site_settings` are the exception — shared across all families on
+purpose (see `docs/multi-family-plan.md`).
+
+No public registration. Accounts are created by a platform admin (`user.is_admin`) in
+`/admin` and activated via a one-time `/set-password/<token>` link — see
+`src/lib/server/families.ts`. Full design: `docs/multi-family-plan.md`.
+
 ## Database Migrations
 
 Migrations are plain SQL files in `app/drizzle/`. No `db:generate` — files are written by hand.

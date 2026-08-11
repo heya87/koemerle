@@ -25,12 +25,17 @@ const handleBetterAuth: Handle = async ({ event, resolve }) => {
 
 	const isAuthRoute = event.url.pathname.startsWith('/api/auth');
 	const isLoginPage = event.url.pathname === '/login';
+	const isSetPasswordPage = event.url.pathname.startsWith('/set-password/');
 
-	if (!event.locals.user && !isAuthRoute && !isLoginPage) {
+	if (!event.locals.user && !isAuthRoute && !isLoginPage && !isSetPasswordPage) {
 		if (event.request.method === 'GET') {
 			return redirect(302, '/login');
 		}
 		return new Response('Unauthorized', { status: 401 });
+	}
+
+	if (event.url.pathname.startsWith('/admin') && !event.locals.user?.isAdmin) {
+		return new Response('Forbidden', { status: 403 });
 	}
 
 	return svelteKitHandler({ event, resolve, auth, building });

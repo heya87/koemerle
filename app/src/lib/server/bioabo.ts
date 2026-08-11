@@ -3,6 +3,7 @@ import { db } from '$lib/server/db';
 import { basketItems, cronRuns } from '$lib/server/db/schema';
 import { eq, and, isNotNull } from 'drizzle-orm';
 import { getWeekStart, generateBasketMatchKey } from '$lib/server/ingredients';
+import { getAllFamilies, getFamilyBioaboConfig } from '$lib/server/families';
 
 export type BasketItem = {
 	name: string;
@@ -23,16 +24,14 @@ function aliasToMatchKey(alias: string): string {
 	return segment.replace(/ue/g, 'ü').replace(/ae/g, 'ä').replace(/oe/g, 'ö');
 }
 
-let cachedToken: string | null = null;
-let tokenExpiresAt = 0;
+// Login tokens are per Biogmüsabo account, so cache by email — different families use
+// different accounts.
+const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 const TOKEN_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
-async function login(): Promise<string> {
-	if (cachedToken && Date.now() < tokenExpiresAt) return cachedToken;
-
-	const email = env.BIOABO_EMAIL;
-	const password = env.BIOABO_PASSWORD;
-	if (!email || !password) throw new Error('BIOABO_EMAIL or BIOABO_PASSWORD not set');
+async function login(email: string, password: string): Promise<string> {
+	const cached = tokenCache.get(email);
+	if (cached && Date.now() < cached.expiresAt) return cached.token;
 
 	const res = await fetch('https://biogmuesabo.ch/ACM/api/auth/login', {
 		method: 'POST',
@@ -44,13 +43,12 @@ async function login(): Promise<string> {
 	const data = await res.json();
 	if (!data.token) throw new Error('No token in login response');
 
-	cachedToken = data.token as string;
-	tokenExpiresAt = Date.now() + TOKEN_TTL_MS;
-	return cachedToken;
+	tokenCache.set(email, { token: data.token as string, expiresAt: Date.now() + TOKEN_TTL_MS });
+	return data.token as string;
 }
 
-export async function fetchCurrentBasket(): Promise<{ items: BasketItem[]; deliveryDate: string | null }> {
-	const token = await login();
+export async function fetchCurrentBasket(email: string, password: string): Promise<{ items: BasketItem[]; deliveryDate: string | null }> {
+	const token = await login(email, password);
 
 	const res = await fetch('https://biogmuesabo.ch/ACM/api/webshop/getcurrentdeliveries', {
 		headers: { Authorization: `Bearer ${token}` }
@@ -105,16 +103,14 @@ export async function fetchCurrentBasket(): Promise<{ items: BasketItem[]; deliv
 	return { items, deliveryDate };
 }
 
-export async function autoSyncBasket(): Promise<void> {
+async function syncFamilyBasket(familyId: number, email: string, password: string): Promise<void> {
 	const job = 'basket-sync';
 
 	try {
-		if (!env.BIOABO_EMAIL || !env.BIOABO_PASSWORD) return;
-
-		const { items, deliveryDate } = await fetchCurrentBasket();
+		const { items, deliveryDate } = await fetchCurrentBasket(email, password);
 
 		if (items.length === 0) {
-			await db.insert(cronRuns).values({ job, success: true, outcome: 'no_delivery', detail: null });
+			await db.insert(cronRuns).values({ familyId, job, success: true, outcome: 'no_delivery', detail: null });
 			return;
 		}
 
@@ -125,11 +121,11 @@ export async function autoSyncBasket(): Promise<void> {
 		// share the same deliveryDate as synced items.
 		if (deliveryDate) {
 			await db.delete(basketItems).where(
-				and(eq(basketItems.weekStart, weekStart), eq(basketItems.deliveryDate, deliveryDate), eq(basketItems.manual, false))
+				and(eq(basketItems.familyId, familyId), eq(basketItems.weekStart, weekStart), eq(basketItems.deliveryDate, deliveryDate), eq(basketItems.manual, false))
 			);
 		} else {
 			await db.delete(basketItems).where(
-				and(eq(basketItems.weekStart, weekStart), isNotNull(basketItems.deliveryDate), eq(basketItems.manual, false))
+				and(eq(basketItems.familyId, familyId), eq(basketItems.weekStart, weekStart), isNotNull(basketItems.deliveryDate), eq(basketItems.manual, false))
 			);
 		}
 
@@ -137,16 +133,29 @@ export async function autoSyncBasket(): Promise<void> {
 			const qty = Number.isInteger(item.amount) ? String(item.amount) : item.amount.toFixed(1);
 			const displayText = `${qty} ${item.unit} ${item.name}`;
 			const matchKey = item.matchKey ?? generateBasketMatchKey(displayText);
-			await db.insert(basketItems).values({ weekStart, displayText, matchKey, deliveryDate });
+			await db.insert(basketItems).values({ familyId, weekStart, displayText, matchKey, deliveryDate });
 		}
 
 		await db.insert(cronRuns).values({
+			familyId,
 			job,
 			success: true,
 			outcome: 'imported',
 			detail: `${items.length} Artikel, Lieferung ${deliveryDate ?? 'unbekannt'}`
 		});
 	} catch (e) {
-		await db.insert(cronRuns).values({ job, success: false, outcome: 'error', detail: String(e) });
+		await db.insert(cronRuns).values({ familyId, job, success: false, outcome: 'error', detail: String(e) });
 	}
 }
+
+/** Runs the Biogmüsabo sync for every family that has it configured (own credentials or, for family 1, the legacy env vars). */
+export async function autoSyncBasket(): Promise<void> {
+	const allFamilies = await getAllFamilies();
+
+	for (const family of allFamilies) {
+		const config = await getFamilyBioaboConfig(family, { email: env.BIOABO_EMAIL, password: env.BIOABO_PASSWORD });
+		if (!config) continue;
+		await syncFamilyBasket(family.id, config.email, config.password);
+	}
+}
+

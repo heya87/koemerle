@@ -4,14 +4,14 @@ import { db } from '$lib/server/db';
 import { recipes, basketItems } from '$lib/server/db/schema';
 import { searchFooby, fetchFoobyRecipe, type FoobySearchResult } from '$lib/server/fooby';
 import { generateMatchKeys, getWeekStart } from '$lib/server/ingredients';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
 	const weekStart = getWeekStart();
 	const basket = await db
 		.select()
 		.from(basketItems)
-		.where(eq(basketItems.weekStart, weekStart))
+		.where(and(eq(basketItems.familyId, locals.user!.familyId), eq(basketItems.weekStart, weekStart)))
 		.orderBy(basketItems.id);
 	return { basket };
 };
@@ -86,7 +86,7 @@ export const actions: Actions = {
 		const proteinG = parseN('protein_g');
 
 		const matchKeys = generateMatchKeys(ingredients);
-		await db.insert(recipes).values({ name, ingredients, matchKeys, recipeUrl, kcal, fatG, carbsG, proteinG });
+		await db.insert(recipes).values({ familyId: locals.user.familyId, name, ingredients, matchKeys, recipeUrl, kcal, fatG, carbsG, proteinG });
 		return redirect(303, '/recipes');
 	}
 };

@@ -28,7 +28,7 @@
 	<form method="post" action="?/sync" use:enhance class="sync-form">
 		<button type="submit" class="btn-sync" disabled={!data.bioaboConfigured}>↻ Von Biogmüsabo</button>
 		{#if !data.bioaboConfigured}
-			<span class="sync-hint">BIOABO_EMAIL / BIOABO_PASSWORD fehlen in den Umgebungsvariablen</span>
+			<span class="sync-hint">Biogmüsabo ist nicht eingerichtet (Einstellungen → Familie)</span>
 		{/if}
 	</form>
 </div>

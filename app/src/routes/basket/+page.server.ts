@@ -5,49 +5,56 @@ import { basketItems } from '$lib/server/db/schema';
 import { eq, and, isNotNull, sql } from 'drizzle-orm';
 import { getWeekStart, generateBasketMatchKey } from '$lib/server/ingredients';
 import { fetchCurrentBasket } from '$lib/server/bioabo';
+import { getFamily, getFamilyBioaboConfig } from '$lib/server/families';
 import { env } from '$env/dynamic/private';
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
+	const familyId = locals.user!.familyId;
 	const weekStart = getWeekStart();
 	const items = await db
 		.select()
 		.from(basketItems)
-		.where(eq(basketItems.weekStart, weekStart))
+		.where(and(eq(basketItems.familyId, familyId), eq(basketItems.weekStart, weekStart)))
 		.orderBy(sql`${basketItems.deliveryDate} ASC NULLS LAST`, basketItems.id);
 
 	const deliveryDate = items.find((i) => i.deliveryDate !== null)?.deliveryDate ?? null;
 
-	const bioaboConfigured = !!(env.BIOABO_EMAIL && env.BIOABO_PASSWORD);
-	return { weekStart, items, deliveryDate, bioaboConfigured };
+	const family = await getFamily(familyId);
+	const bioabo = family ? await getFamilyBioaboConfig(family, { email: env.BIOABO_EMAIL, password: env.BIOABO_PASSWORD }) : null;
+
+	return { weekStart, items, deliveryDate, bioaboConfigured: !!bioabo };
 };
 
 export const actions: Actions = {
 	updateKey: async ({ request, locals }) => {
 		if (!locals.user) return fail(401);
+		const familyId = locals.user.familyId;
 		const formData = await request.formData();
 		const id = Number(formData.get('id'));
 		const matchKey = formData.get('matchKey')?.toString().trim().toLowerCase() ?? '';
 		if (!matchKey) return fail(400, { message: 'Schlüssel darf nicht leer sein.' });
 		const weekStart = getWeekStart();
 		await db.update(basketItems).set({ matchKey }).where(
-			and(eq(basketItems.id, id), eq(basketItems.weekStart, weekStart))
+			and(eq(basketItems.id, id), eq(basketItems.familyId, familyId), eq(basketItems.weekStart, weekStart))
 		);
 	},
 
 	updateDisplay: async ({ request, locals }) => {
 		if (!locals.user) return fail(401);
+		const familyId = locals.user.familyId;
 		const formData = await request.formData();
 		const id = Number(formData.get('id'));
 		const displayText = formData.get('displayText')?.toString().trim() ?? '';
 		if (!displayText) return fail(400, { message: 'Bezeichnung darf nicht leer sein.' });
 		const weekStart = getWeekStart();
 		await db.update(basketItems).set({ displayText }).where(
-			and(eq(basketItems.id, id), eq(basketItems.weekStart, weekStart))
+			and(eq(basketItems.id, id), eq(basketItems.familyId, familyId), eq(basketItems.weekStart, weekStart))
 		);
 	},
 
 	add: async ({ request, locals }) => {
 		if (!locals.user) return fail(401);
+		const familyId = locals.user.familyId;
 		const formData = await request.formData();
 		const displayText = formData.get('displayText')?.toString().trim() ?? '';
 		if (!displayText) return fail(400, { message: 'Bitte einen Eintrag eingeben.' });
@@ -59,10 +66,11 @@ export const actions: Actions = {
 		const [known] = await db
 			.select({ deliveryDate: basketItems.deliveryDate })
 			.from(basketItems)
-			.where(and(eq(basketItems.weekStart, weekStart), isNotNull(basketItems.deliveryDate)))
+			.where(and(eq(basketItems.familyId, familyId), eq(basketItems.weekStart, weekStart), isNotNull(basketItems.deliveryDate)))
 			.limit(1);
 
 		await db.insert(basketItems).values({
+			familyId,
 			weekStart,
 			displayText,
 			matchKey,
@@ -73,21 +81,27 @@ export const actions: Actions = {
 
 	remove: async ({ request, locals }) => {
 		if (!locals.user) return fail(401);
+		const familyId = locals.user.familyId;
 		const formData = await request.formData();
 		const id = Number(formData.get('id'));
 		const weekStart = getWeekStart();
 
 		await db.delete(basketItems).where(
-			and(eq(basketItems.id, id), eq(basketItems.weekStart, weekStart))
+			and(eq(basketItems.id, id), eq(basketItems.familyId, familyId), eq(basketItems.weekStart, weekStart))
 		);
 	},
 
 	sync: async ({ locals }) => {
 		if (!locals.user) return fail(401);
+		const familyId = locals.user.familyId;
+
+		const family = await getFamily(familyId);
+		const bioabo = family ? await getFamilyBioaboConfig(family, { email: env.BIOABO_EMAIL, password: env.BIOABO_PASSWORD }) : null;
+		if (!bioabo) return fail(400, { message: 'Biogmüsabo ist für eure Familie nicht eingerichtet (siehe Einstellungen).' });
 
 		let result: Awaited<ReturnType<typeof fetchCurrentBasket>>;
 		try {
-			result = await fetchCurrentBasket();
+			result = await fetchCurrentBasket(bioabo.email, bioabo.password);
 		} catch (e) {
 			return fail(500, { message: `Sync fehlgeschlagen: ${String(e)}` });
 		}
@@ -104,12 +118,12 @@ export const actions: Actions = {
 		// they can now carry the same deliveryDate, so the manual flag is what protects them here).
 		if (deliveryDate) {
 			await db.delete(basketItems).where(
-				and(eq(basketItems.weekStart, weekStart), eq(basketItems.deliveryDate, deliveryDate), eq(basketItems.manual, false))
+				and(eq(basketItems.familyId, familyId), eq(basketItems.weekStart, weekStart), eq(basketItems.deliveryDate, deliveryDate), eq(basketItems.manual, false))
 			);
 		} else {
 			// No delivery date — fall back to replacing all imported items
 			await db.delete(basketItems).where(
-				and(eq(basketItems.weekStart, weekStart), isNotNull(basketItems.deliveryDate), eq(basketItems.manual, false))
+				and(eq(basketItems.familyId, familyId), eq(basketItems.weekStart, weekStart), isNotNull(basketItems.deliveryDate), eq(basketItems.manual, false))
 			);
 		}
 
@@ -117,7 +131,7 @@ export const actions: Actions = {
 			const qty = Number.isInteger(item.amount) ? String(item.amount) : item.amount.toFixed(1);
 			const displayText = `${qty} ${item.unit} ${item.name}`;
 			const matchKey = item.matchKey ?? generateBasketMatchKey(displayText);
-			await db.insert(basketItems).values({ weekStart, displayText, matchKey, deliveryDate });
+			await db.insert(basketItems).values({ familyId, weekStart, displayText, matchKey, deliveryDate });
 		}
 
 		return { synced: items.length };

@@ -2,12 +2,12 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { recipes } from '$lib/server/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { generateMatchKeys } from '$lib/server/ingredients';
 
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({ params, locals }) => {
 	const id = Number(params.id);
-	const [recipe] = await db.select().from(recipes).where(eq(recipes.id, id));
+	const [recipe] = await db.select().from(recipes).where(and(eq(recipes.id, id), eq(recipes.familyId, locals.user!.familyId)));
 	if (!recipe) error(404, 'Rezept nicht gefunden');
 	return { recipe };
 };
@@ -44,7 +44,8 @@ export const actions: Actions = {
 
 		const matchKeys = generateMatchKeys(ingredients);
 
-		await db.update(recipes).set({ name, ingredients, matchKeys, recipeUrl, servings, course, preparation, kcal, fatG, carbsG, proteinG }).where(eq(recipes.id, id));
+		await db.update(recipes).set({ name, ingredients, matchKeys, recipeUrl, servings, course, preparation, kcal, fatG, carbsG, proteinG })
+			.where(and(eq(recipes.id, id), eq(recipes.familyId, locals.user.familyId)));
 		return redirect(303, '/recipes');
 	}
 };

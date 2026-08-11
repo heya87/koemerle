@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { mealPlanEntries, recipes } from '$lib/server/db/schema';
-import { gte } from 'drizzle-orm';
+import { eq, and, gte } from 'drizzle-orm';
 
 const NOT_NEEDED = '__not_needed__';
 
@@ -9,12 +9,13 @@ function slotOrder(slot: string): number {
 	return slot === 'lunch' ? 0 : 1;
 }
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
+	const familyId = locals.user!.familyId;
 	const today = new Date().toISOString().split('T')[0];
 
 	const [entries, allRecipes] = await Promise.all([
-		db.select().from(mealPlanEntries).where(gte(mealPlanEntries.date, today)),
-		db.select().from(recipes)
+		db.select().from(mealPlanEntries).where(and(eq(mealPlanEntries.familyId, familyId), gte(mealPlanEntries.date, today))),
+		db.select().from(recipes).where(eq(recipes.familyId, familyId))
 	]);
 
 	const recipeById = new Map(allRecipes.map((r) => [r.id, r]));

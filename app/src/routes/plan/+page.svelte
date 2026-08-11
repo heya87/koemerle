@@ -547,12 +547,14 @@
 
 			<div class="modal-footer">
 				<button type="button" class="btn-modal-cancel" onclick={closeModal}>Abbrechen</button>
-				<button
-					type="submit"
-					formaction="?/getClaudeSuggestion"
-					class="btn-modal-claude"
-					disabled={claudeLoading}
-				>{claudeLoading ? 'Claude denkt…' : '✦ Mit Claude'}</button>
+				{#if data.claudeEnabled}
+					<button
+						type="submit"
+						formaction="?/getClaudeSuggestion"
+						class="btn-modal-claude"
+						disabled={claudeLoading}
+					>{claudeLoading ? 'Claude denkt…' : '✦ Mit Claude'}</button>
+				{/if}
 				<button
 					type="submit"
 					formaction={modalDirect ? '?/quickPlan' : '?/getSuggestion'}

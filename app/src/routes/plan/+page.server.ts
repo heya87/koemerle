@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { recipes, basketItems, mealPlanEntries, planMeta, activityLog, ingredientGroups, plantFoods, siteSettings } from '$lib/server/db/schema';
+import { recipes, basketItems, mealPlanEntries, planMeta, activityLog, ingredientGroups, plantFoods } from '$lib/server/db/schema';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { getWeekStart, createKeyNormalizer, buildAliasMap, generateMatchKeys } from '$lib/server/ingredients';
 import { suggestPlan, generateSlots } from '$lib/server/planning';
@@ -11,6 +11,7 @@ import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import { env } from '$env/dynamic/private';
 import { DEFAULT_CLAUDE_PROMPT } from '$lib/server/claude';
 import { searchFooby, fetchFoobyRecipe } from '$lib/server/fooby';
+import { getFamily } from '$lib/server/families';
 
 const NOT_NEEDED = '__not_needed__';
 
@@ -27,15 +28,34 @@ function formatDateLabel(iso: string): string {
 	return `${names[d.getUTCDay()]} ${d.getUTCDate()}.${d.getUTCMonth() + 1}.`;
 }
 
-export const load: PageServerLoad = async () => {
+// Deletes any transient (Claude/Fooby-suggested, not explicitly saved) recipe belonging
+// to this family that's no longer referenced by any of this family's plan entries.
+async function cleanupOrphanedTransients(familyId: number): Promise<void> {
+	const referencedIds = await db
+		.select({ id: mealPlanEntries.recipeId })
+		.from(mealPlanEntries)
+		.where(eq(mealPlanEntries.familyId, familyId))
+		.then((rows) => new Set(rows.map((r) => r.id).filter((id): id is number => id !== null)));
+	const familyTransients = await db
+		.select({ id: recipes.id })
+		.from(recipes)
+		.where(and(eq(recipes.familyId, familyId), eq(recipes.transient, true)));
+	const orphaned = familyTransients.filter((r) => !referencedIds.has(r.id));
+	if (orphaned.length > 0) {
+		await Promise.all(orphaned.map((r) => db.delete(recipes).where(and(eq(recipes.id, r.id), eq(recipes.familyId, familyId)))));
+	}
+}
+
+export const load: PageServerLoad = async ({ locals }) => {
+	const familyId = locals.user!.familyId;
 	const today = new Date().toISOString().split('T')[0];
 	const weekStart = getWeekStart();
 
 	const [allRecipes, basket, entries, metaRows, groups, plantFoodRows] = await Promise.all([
-		db.select().from(recipes).orderBy(recipes.name),
-		db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
-		db.select().from(mealPlanEntries),
-		db.select().from(planMeta).limit(1),
+		db.select().from(recipes).where(eq(recipes.familyId, familyId)).orderBy(recipes.name),
+		db.select().from(basketItems).where(and(eq(basketItems.familyId, familyId), eq(basketItems.weekStart, weekStart))),
+		db.select().from(mealPlanEntries).where(eq(mealPlanEntries.familyId, familyId)),
+		db.select().from(planMeta).where(eq(planMeta.familyId, familyId)).limit(1),
 		db.select().from(ingredientGroups),
 		db.select().from(plantFoods)
 	]);
@@ -87,12 +107,15 @@ export const load: PageServerLoad = async () => {
 	const proteinKcal = totalProteinG * 4;
 	const macroTotal = fatKcal + carbsKcal + proteinKcal;
 
+	const family = await getFamily(familyId);
+
 	return {
 		today,
 		allRecipes,
 		basket,
 		entries,
 		meta,
+		claudeEnabled: family?.claudeEnabled ?? false,
 		plantCount: foundPlants.size,
 		plantGoal: 30,
 		nutrientSummary: {
@@ -112,6 +135,7 @@ export const actions: Actions = {
 	getSuggestion: async ({ request, locals }) => {
 		const user = locals.user;
 		if (!user) return fail(401);
+		const familyId = user.familyId;
 
 		const fd = await request.formData();
 		const startDate = fd.get('startDate')?.toString() ?? '';
@@ -127,9 +151,9 @@ export const actions: Actions = {
 
 		const weekStart = getWeekStart();
 		const [basket, allRecipes, existing, groups] = await Promise.all([
-			db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
-			db.select().from(recipes),
-			db.select().from(mealPlanEntries),
+			db.select().from(basketItems).where(and(eq(basketItems.familyId, familyId), eq(basketItems.weekStart, weekStart))),
+			db.select().from(recipes).where(eq(recipes.familyId, familyId)),
+			db.select().from(mealPlanEntries).where(eq(mealPlanEntries.familyId, familyId)),
 			db.select().from(ingredientGroups)
 		]);
 
@@ -168,6 +192,7 @@ export const actions: Actions = {
 	quickPlan: async ({ request, locals }) => {
 		const user = locals.user;
 		if (!user) return fail(401);
+		const familyId = user.familyId;
 
 		const fd = await request.formData();
 		const startDate = fd.get('startDate')?.toString() ?? '';
@@ -180,9 +205,9 @@ export const actions: Actions = {
 
 		const weekStart = getWeekStart();
 		const [basket, allRecipes, existing, groups] = await Promise.all([
-			db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
-			db.select().from(recipes),
-			db.select().from(mealPlanEntries),
+			db.select().from(basketItems).where(and(eq(basketItems.familyId, familyId), eq(basketItems.weekStart, weekStart))),
+			db.select().from(recipes).where(eq(recipes.familyId, familyId)),
+			db.select().from(mealPlanEntries).where(eq(mealPlanEntries.familyId, familyId)),
 			db.select().from(ingredientGroups)
 		]);
 
@@ -209,16 +234,17 @@ export const actions: Actions = {
 		const userName = user.name ?? user.email;
 		const today = new Date().toISOString().split('T')[0];
 
-		await db.delete(planMeta);
-		await db.insert(planMeta).values({ planStart: startDate, planEnd: endDate, planningStartSlot: startSlot });
+		await db.delete(planMeta).where(eq(planMeta.familyId, familyId));
+		await db.insert(planMeta).values({ familyId, planStart: startDate, planEnd: endDate, planningStartSlot: startSlot });
 
 		await db.delete(mealPlanEntries).where(
-			and(gte(mealPlanEntries.date, startDate), lte(mealPlanEntries.date, endDate))
+			and(eq(mealPlanEntries.familyId, familyId), gte(mealPlanEntries.date, startDate), lte(mealPlanEntries.date, endDate))
 		);
 
 		if (newEntries.length > 0) {
 			await db.insert(mealPlanEntries).values(
 				newEntries.map((e) => ({
+					familyId,
 					date: e.date,
 					slot: e.slot,
 					course: e.course,
@@ -231,6 +257,7 @@ export const actions: Actions = {
 		}
 
 		await db.insert(activityLog).values({
+			familyId,
 			logDate: today,
 			userId: user.id,
 			message: `${userName} hat den Plan neu erstellt (${formatDateLabel(startDate)}–${formatDateLabel(endDate)})`,
@@ -242,6 +269,7 @@ export const actions: Actions = {
 	confirmPlan: async ({ request, locals }) => {
 		const user = locals.user;
 		if (!user) return fail(401);
+		const familyId = user.familyId;
 
 		const fd = await request.formData();
 		const startDate = fd.get('startDate')?.toString() ?? '';
@@ -279,6 +307,7 @@ export const actions: Actions = {
 				const meal = e.newMeal;
 				const matchKeys = generateMatchKeys(meal.ingredients);
 				const [inserted] = await db.insert(recipes).values({
+					familyId,
 					name: meal.name.trim(),
 					ingredients: meal.ingredients.trim(),
 					preparation: meal.instructions?.trim() || null,
@@ -294,16 +323,17 @@ export const actions: Actions = {
 			})
 		);
 
-		await db.delete(planMeta);
-		await db.insert(planMeta).values({ planStart: startDate, planEnd: endDate, planningStartSlot: startSlot });
+		await db.delete(planMeta).where(eq(planMeta.familyId, familyId));
+		await db.insert(planMeta).values({ familyId, planStart: startDate, planEnd: endDate, planningStartSlot: startSlot });
 
 		await db.delete(mealPlanEntries).where(
-			and(gte(mealPlanEntries.date, startDate), lte(mealPlanEntries.date, endDate))
+			and(eq(mealPlanEntries.familyId, familyId), gte(mealPlanEntries.date, startDate), lte(mealPlanEntries.date, endDate))
 		);
 
 		if (resolvedEntries.length > 0) {
 			await db.insert(mealPlanEntries).values(
 				resolvedEntries.map((e) => ({
+					familyId,
 					date: e.date,
 					slot: e.slot,
 					course: e.course ?? 'main',
@@ -315,21 +345,11 @@ export const actions: Actions = {
 			);
 		}
 
-		// Clean up transient recipes no longer referenced by any plan entry
-		const allPlanRecipeIds = await db
-			.select({ id: mealPlanEntries.recipeId })
-			.from(mealPlanEntries)
-			.then((rows) => new Set(rows.map((r) => r.id).filter((id): id is number => id !== null)));
-		const transientRecipes = await db
-			.select({ id: recipes.id })
-			.from(recipes)
-			.where(eq(recipes.transient, true));
-		const orphaned = transientRecipes.filter((r) => !allPlanRecipeIds.has(r.id));
-		if (orphaned.length > 0) {
-			await Promise.all(orphaned.map((r) => db.delete(recipes).where(eq(recipes.id, r.id))));
-		}
+		// Clean up transient recipes no longer referenced by any plan entry (this family only)
+		await cleanupOrphanedTransients(familyId);
 
 		await db.insert(activityLog).values({
+			familyId,
 			logDate: today,
 			userId: user.id,
 			message: `${userName} hat den Plan bestätigt`,
@@ -340,6 +360,7 @@ export const actions: Actions = {
 	setSlot: async ({ request, locals }) => {
 		const user = locals.user;
 		if (!user) return fail(401);
+		const familyId = user.familyId;
 
 		const fd = await request.formData();
 		const date = fd.get('date')?.toString() ?? '';
@@ -362,6 +383,7 @@ export const actions: Actions = {
 		await db
 			.insert(mealPlanEntries)
 			.values({
+				familyId,
 				date,
 				slot,
 				course,
@@ -371,7 +393,7 @@ export const actions: Actions = {
 				updatedAt: new Date()
 			})
 			.onConflictDoUpdate({
-				target: [mealPlanEntries.date, mealPlanEntries.slot, mealPlanEntries.course],
+				target: [mealPlanEntries.familyId, mealPlanEntries.date, mealPlanEntries.slot, mealPlanEntries.course],
 				set: {
 					recipeId: recipeId ?? null,
 					freeText: recipeId ? null : freeText,
@@ -381,6 +403,7 @@ export const actions: Actions = {
 			});
 
 		await db.insert(activityLog).values({
+			familyId,
 			logDate: today,
 			userId: user.id,
 			message: `${userName} hat ${formatDateLabel(date)} ${SLOT_LABELS[slot]} ${COURSE_LABELS[course] ?? ''} geändert`,
@@ -391,6 +414,7 @@ export const actions: Actions = {
 	clearSlot: async ({ request, locals }) => {
 		const user = locals.user;
 		if (!user) return fail(401);
+		const familyId = user.familyId;
 
 		const fd = await request.formData();
 		const date = fd.get('date')?.toString() ?? '';
@@ -408,6 +432,7 @@ export const actions: Actions = {
 			.delete(mealPlanEntries)
 			.where(
 				and(
+					eq(mealPlanEntries.familyId, familyId),
 					eq(mealPlanEntries.date, date),
 					eq(mealPlanEntries.slot, slot),
 					eq(mealPlanEntries.course, course)
@@ -415,6 +440,7 @@ export const actions: Actions = {
 			);
 
 		await db.insert(activityLog).values({
+			familyId,
 			logDate: today,
 			userId: user.id,
 			message: `${userName} hat ${formatDateLabel(date)} ${SLOT_LABELS[slot]} ${COURSE_LABELS[course] ?? ''} geleert`,
@@ -425,6 +451,10 @@ export const actions: Actions = {
 	getClaudeSuggestion: async ({ request, locals }) => {
 		const user = locals.user;
 		if (!user) return fail(401);
+		const familyId = user.familyId;
+
+		const family = await getFamily(familyId);
+		if (!family?.claudeEnabled) return fail(403, { message: 'Claude-Vorschläge sind für eure Familie nicht aktiviert.' });
 
 		const { ANTHROPIC_API_KEY } = env;
 		if (!ANTHROPIC_API_KEY) return fail(500, { message: 'ANTHROPIC_API_KEY fehlt in den Umgebungsvariablen.' });
@@ -441,24 +471,15 @@ export const actions: Actions = {
 		const weekStart = getWeekStart();
 
 		// Clean up transient recipes not referenced by any plan entry before building a new suggestion
-		const referencedIds = await db
-			.select({ id: mealPlanEntries.recipeId })
-			.from(mealPlanEntries)
-			.then((rows) => new Set(rows.map((r) => r.id).filter((id): id is number => id !== null)));
-		const allTransients = await db.select({ id: recipes.id }).from(recipes).where(eq(recipes.transient, true));
-		const orphanedNow = allTransients.filter((r) => !referencedIds.has(r.id));
-		if (orphanedNow.length > 0) {
-			await Promise.all(orphanedNow.map((r) => db.delete(recipes).where(eq(recipes.id, r.id))));
-		}
+		await cleanupOrphanedTransients(familyId);
 
-		const [basket, allRecipes, existing, settingsRows, groups] = await Promise.all([
-			db.select().from(basketItems).where(eq(basketItems.weekStart, weekStart)),
-			db.select().from(recipes).where(eq(recipes.transient, false)),
-			db.select().from(mealPlanEntries),
-			db.select().from(siteSettings).limit(1),
+		const [basket, allRecipes, existing, groups] = await Promise.all([
+			db.select().from(basketItems).where(and(eq(basketItems.familyId, familyId), eq(basketItems.weekStart, weekStart))),
+			db.select().from(recipes).where(and(eq(recipes.familyId, familyId), eq(recipes.transient, false))),
+			db.select().from(mealPlanEntries).where(eq(mealPlanEntries.familyId, familyId)),
 			db.select().from(ingredientGroups)
 		]);
-		const promptTemplate = settingsRows[0]?.claudePromptTemplate || DEFAULT_CLAUDE_PROMPT;
+		const promptTemplate = family.claudePromptTemplate || DEFAULT_CLAUDE_PROMPT;
 
 		const allSlots = generateSlots(startDate, endDate, startSlot);
 		const allSlotKeys = new Set(allSlots.map(([d, s]) => `${d}-${s}`));
@@ -744,6 +765,7 @@ export const actions: Actions = {
 	moveSlot: async ({ request, locals }) => {
 		const user = locals.user;
 		if (!user) return fail(401);
+		const familyId = user.familyId;
 
 		const fd = await request.formData();
 		const fromDate = fd.get('fromDate')?.toString() ?? '';
@@ -771,6 +793,7 @@ export const actions: Actions = {
 				.from(mealPlanEntries)
 				.where(
 					and(
+						eq(mealPlanEntries.familyId, familyId),
 						eq(mealPlanEntries.date, fromDate),
 						eq(mealPlanEntries.slot, fromSlot),
 						eq(mealPlanEntries.course, fromCourse)
@@ -782,6 +805,7 @@ export const actions: Actions = {
 				.from(mealPlanEntries)
 				.where(
 					and(
+						eq(mealPlanEntries.familyId, familyId),
 						eq(mealPlanEntries.date, toDate),
 						eq(mealPlanEntries.slot, toSlot),
 						eq(mealPlanEntries.course, toCourse)
@@ -805,6 +829,7 @@ export const actions: Actions = {
 			]);
 		} else {
 			await db.insert(mealPlanEntries).values({
+				familyId,
 				date: toDate, slot: toSlot, course: toCourse,
 				recipeId: fromEntry.recipeId, freeText: fromEntry.freeText,
 				updatedBy: userName, updatedAt: new Date()
@@ -814,6 +839,7 @@ export const actions: Actions = {
 
 		const action = toEntry ? 'getauscht' : 'verschoben';
 		await db.insert(activityLog).values({
+			familyId,
 			logDate: today,
 			userId: user.id,
 			message: `${userName} hat ${formatDateLabel(fromDate)} ${SLOT_LABELS[fromSlot]} ${COURSE_LABELS[fromCourse] ?? ''} ${action} nach ${formatDateLabel(toDate)} ${SLOT_LABELS[toSlot]} ${COURSE_LABELS[toCourse] ?? ''}`,
