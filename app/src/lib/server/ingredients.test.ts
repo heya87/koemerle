@@ -103,6 +103,15 @@ describe('generateBasketMatchKey', () => {
 	it('returns last meaningful word', () => {
 		expect(generateBasketMatchKey('3 grosse Karotten')).toBe('karotten');
 	});
+
+	it('skips generic descriptor words in favour of the specific one', () => {
+		expect(generateBasketMatchKey('Miso-Paste')).toBe('miso');
+		expect(generateBasketMatchKey('480g griechischer Jogurt nature')).toBe('jogurt');
+	});
+
+	it('falls back to the generic word if nothing more specific is available', () => {
+		expect(generateBasketMatchKey('1 Glas Paste')).toBe('paste');
+	});
 });
 
 describe('mergeBasketItems', () => {

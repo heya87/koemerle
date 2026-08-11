@@ -8,6 +8,16 @@
 	let locallyExcluded = $state(new Set<number>());
 	let networkError = $state<string | null>(null);
 
+	let lagerDialog: HTMLDialogElement | undefined = $state();
+	let lagerDialogItem = $state<ShoppingItem | null>(null);
+	let lagerDialogText = $state('');
+
+	function openLagerDialog(item: ShoppingItem) {
+		lagerDialogItem = item;
+		lagerDialogText = item.lagerSuggestion;
+		lagerDialog?.showModal();
+	}
+
 	let sessionDateStart = $state(data.session?.planStart ?? '');
 	let sessionDateEnd = $state(data.session?.planEnd ?? '');
 
@@ -143,7 +153,15 @@
 						<li class:list-slot-0={getListSlot(item) === 0} class:list-slot-1={getListSlot(item) === 1}>
 							<span class="item-text">{item.displayText}</span>
 							<div class="item-actions">
-								{#if data.bringLists.length === 2}
+									<button
+										type="button"
+										class="btn-to-lager"
+										title="In die Vorratskammer verschieben"
+										onclick={() => openLagerDialog(item)}
+									>
+										→ Vorrat
+									</button>
+									{#if data.bringLists.length === 2}
 									<button
 										type="button"
 										class="list-toggle"
@@ -218,6 +236,33 @@
 		</div>
 	</div>
 {/if}
+
+<dialog bind:this={lagerDialog} class="lager-dialog" onclose={() => (lagerDialogItem = null)}>
+	{#if lagerDialogItem}
+		<form
+			method="post"
+			action="?/moveToLager"
+			use:enhance={() => {
+				const id = lagerDialogItem!.id;
+				return async ({ result, update }) => {
+					if (result.type === 'success') {
+						locallyExcluded = new Set([...locallyExcluded, id]);
+						lagerDialog?.close();
+					}
+					await update({ reset: false });
+				};
+			}}
+		>
+			<h3>In die Vorratskammer</h3>
+			<input type="hidden" name="itemId" value={lagerDialogItem.id} />
+			<input type="text" name="displayText" bind:value={lagerDialogText} required />
+			<div class="lager-dialog-actions">
+				<button type="button" class="btn-discard" onclick={() => lagerDialog?.close()}>Abbrechen</button>
+				<button type="submit" class="btn-bring">Hinzufügen</button>
+			</div>
+		</form>
+	{/if}
+</dialog>
 
 <style>
 	.page-header {
@@ -335,10 +380,12 @@
 	/* Visually tell the two Bring! lists apart at a glance (e.g. Unverpackt vs. Liebesnest) */
 	.item-list li.list-slot-0 {
 		border-left-color: var(--green);
+		background: color-mix(in srgb, var(--green) 8%, transparent);
 	}
 
 	.item-list li.list-slot-1 {
 		border-left-color: #5b4fcf;
+		background: color-mix(in srgb, #5b4fcf 8%, transparent);
 	}
 
 	.item-text {
@@ -384,29 +431,53 @@
 		background: #fdf0f0;
 	}
 
+	.btn-to-lager {
+		background: none;
+		border: 1px solid var(--border);
+		color: var(--text-muted);
+		cursor: pointer;
+		font-family: inherit;
+		font-size: 0.75rem;
+		white-space: nowrap;
+		padding: 0.2rem 0.5rem;
+		border-radius: var(--radius);
+		transition: color 0.15s, border-color 0.15s;
+	}
+
+	.btn-to-lager:hover {
+		color: var(--text);
+		border-color: var(--text-muted);
+	}
+
 	.list-toggle {
 		font-size: 0.75rem;
 		font-family: inherit;
+		font-weight: 500;
 		padding: 0.2rem 0.6rem;
-		border: 1px solid var(--border);
+		border: 1px solid var(--green);
 		border-radius: var(--radius);
-		background: var(--surface-raised, #f5f5f5);
-		color: var(--text-muted);
+		background: color-mix(in srgb, var(--green) 18%, var(--surface));
+		color: var(--green-dark, var(--green));
 		cursor: pointer;
 		white-space: nowrap;
 		flex-shrink: 0;
 		transition: background 0.15s, color 0.15s;
 	}
 
+	.list-toggle-1 {
+		border-color: #5b4fcf;
+		background: color-mix(in srgb, #5b4fcf 18%, var(--surface));
+		color: #5b4fcf;
+	}
+
 	.list-toggle:hover {
 		background: var(--green);
 		color: white;
-		border-color: var(--green);
 	}
 
 	.list-toggle-1:hover {
 		background: #5b4fcf;
-		border-color: #5b4fcf;
+		color: white;
 	}
 
 	.actions {
@@ -514,5 +585,43 @@
 		.shopping-card {
 			max-width: 480px;
 		}
+	}
+
+	.lager-dialog {
+		border: none;
+		border-radius: var(--radius-lg);
+		box-shadow: 0 8px 32px rgba(42, 37, 32, 0.18);
+		padding: 1.25rem;
+		width: min(360px, 92vw);
+		background: var(--surface);
+		color: var(--text);
+	}
+
+	.lager-dialog::backdrop {
+		background: rgba(42, 37, 32, 0.45);
+	}
+
+	.lager-dialog h3 {
+		margin: 0 0 0.75rem;
+		font-size: 1rem;
+	}
+
+	.lager-dialog input[type='text'] {
+		width: 100%;
+		box-sizing: border-box;
+		font-family: inherit;
+		font-size: 0.95rem;
+		padding: 0.5rem 0.6rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		background: var(--surface);
+		color: var(--text);
+	}
+
+	.lager-dialog-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.6rem;
+		margin-top: 1rem;
 	}
 </style>

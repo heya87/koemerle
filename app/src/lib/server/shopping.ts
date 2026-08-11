@@ -1,4 +1,4 @@
-import { generateMatchKeys, mergeBasketItems, stripAccents, type KeyNormalizer } from './ingredients';
+import { generateMatchKeys, mergeBasketItems, stripAccents, pickPrimaryKey, type KeyNormalizer } from './ingredients';
 
 // Suffix-based matching so "Meersalz", "Olivenöl", "Mineralwasser" etc. are also excluded.
 const PANTRY_SUFFIXES = ['salz', 'pfeffer', 'öl', 'wasser', 'balsamico', 'essig'];
@@ -52,8 +52,9 @@ export function computeShoppingList(
 
 		const keys = generateMatchKeys(trimmed);
 		if (keys.length === 0) return;
-		const rawKey = stripAccents(keys.at(-1)!.toLowerCase());
-		const matchKey = normalize(keys.at(-1)!);
+		const primaryKey = pickPrimaryKey(keys)!;
+		const rawKey = stripAccents(primaryKey.toLowerCase());
+		const matchKey = normalize(primaryKey);
 
 		if (basketKeys.has(matchKey)) return;
 		if (isPantryStaple(matchKey)) return;

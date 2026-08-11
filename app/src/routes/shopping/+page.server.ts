@@ -14,7 +14,7 @@ import {
 	shoppingItems
 } from '$lib/server/db/schema';
 import { eq, and, gte, lte, inArray, isNull } from 'drizzle-orm';
-import { getWeekStart, buildAliasMap, createKeyNormalizer } from '$lib/server/ingredients';
+import { getWeekStart, buildAliasMap, createKeyNormalizer, stripQuantity } from '$lib/server/ingredients';
 import { computeShoppingList } from '$lib/server/shopping';
 import { getBringConfig, getBringLists } from '$lib/server/bring';
 import { getFamily } from '$lib/server/families';
@@ -80,7 +80,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const prefByKey = new Map(prefs.map((p) => [p.matchKey, p.listIndex]));
 	const items = rawItems.map((item) => ({
 		...item,
-		preferredListId: bringLists[prefByKey.get(item.matchKey) ?? 0]?.id ?? null
+		preferredListId: bringLists[prefByKey.get(item.matchKey) ?? 0]?.id ?? null,
+		lagerSuggestion: stripQuantity(item.displayText)
 	}));
 
 	return {
@@ -173,6 +174,33 @@ export const actions: Actions = {
 
 		await db.update(shoppingItems).set({ excluded: true }).where(and(eq(shoppingItems.id, itemId), eq(shoppingItems.familyId, locals.user.familyId)));
 		return { excluded: itemId };
+	},
+
+	// "Already have this" — moves the item into the Vorratskammer (so future shopping
+	// lists exclude it too) instead of buying it, and drops it from this session.
+	moveToLager: async ({ locals, request }) => {
+		if (!locals.user) return fail(401);
+		const familyId = locals.user.familyId;
+
+		const formData = await request.formData();
+		const itemId = Number(formData.get('itemId'));
+		const editedText = (formData.get('displayText') as string | null)?.trim();
+		if (!itemId) return fail(400);
+
+		const [item] = await db
+			.select()
+			.from(shoppingItems)
+			.where(and(eq(shoppingItems.id, itemId), eq(shoppingItems.familyId, familyId)));
+		if (!item) return fail(404);
+
+		await db.insert(lagerItems).values({
+			familyId,
+			displayText: editedText || stripQuantity(item.displayText),
+			matchKey: item.matchKey
+		});
+		await db.update(shoppingItems).set({ excluded: true }).where(eq(shoppingItems.id, itemId));
+
+		return { movedToLager: itemId };
 	},
 
 	discardSession: async ({ locals, request }) => {

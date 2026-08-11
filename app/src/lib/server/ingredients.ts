@@ -17,6 +17,28 @@ const STOP_WORDS = new Set([
 	'klasse', 'ganz', 'ganze', 'ganzen', 'frisch', 'frische', 'frischen'
 ]);
 
+// Generic product-type/descriptor nouns that make a poor match key on their own
+// (too many unrelated ingredients share them, e.g. "Miso-Paste" and "Tomatenpaste"
+// would both key on "paste"). Skipped when picking the primary key IF a more
+// specific word is available in the same line — still used as a fallback so
+// "1 Glas Paste" alone still works.
+const GENERIC_WORDS = new Set([
+	'paste', 'sauce', 'pulver', 'creme', 'extrakt', 'sirup', 'konzentrat',
+	'ersatz', 'nature', 'bio'
+]);
+
+/**
+ * Picks the primary match key out of a line's candidate words: the last one
+ * that isn't a generic descriptor (see GENERIC_WORDS), falling back to the
+ * true last word if every candidate is generic.
+ */
+export function pickPrimaryKey(keys: string[]): string | undefined {
+	for (let i = keys.length - 1; i >= 0; i--) {
+		if (!GENERIC_WORDS.has(keys[i])) return keys[i];
+	}
+	return keys.at(-1);
+}
+
 /**
  * Strips accents from a match key for comparison purposes.
  * Handles French accents while preserving German umlauts.
@@ -124,7 +146,7 @@ export function generateMatchKeys(ingredients: string): string[] {
  */
 export function generateBasketMatchKey(line: string): string {
 	const keys = generateMatchKeys(line);
-	return keys.at(-1) ?? line.toLowerCase().trim();
+	return pickPrimaryKey(keys) ?? line.toLowerCase().trim();
 }
 
 // Units that are written attached to the number (e.g. "500g"), no space before ingredient name.
@@ -148,6 +170,17 @@ function parseItem(text: string): ParsedItem | null {
 	if (m) return { amount: parseFloat(m[1].replace(',', '.')), unit: '', name: m[2] };
 
 	return null;
+}
+
+/**
+ * Strips the quantity/unit prefix from a shopping list line, for storing in the
+ * Vorratskammer where items are tracked by presence only, not amount
+ * (e.g. "400g Joghurt" → "Joghurt"). Falls back to the original text if it
+ * doesn't start with a quantity.
+ */
+export function stripQuantity(text: string): string {
+	const parsed = parseItem(text.trim());
+	return parsed ? parsed.name.trim() : text.trim();
 }
 
 function formatItem({ amount, unit, name }: ParsedItem): string {
